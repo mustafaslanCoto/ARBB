@@ -5,6 +5,6 @@ ARML.egg-info/SOURCES.txt
 ARML.egg-info/dependency_links.txt
 ARML.egg-info/requires.txt
 ARML.egg-info/top_level.txt
-src/__init__.py
-src/logic.py
-src/main.py
+arml/__init__.py
+arml/logic.py
+arml/main.py
