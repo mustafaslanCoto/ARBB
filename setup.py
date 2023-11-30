@@ -14,6 +14,7 @@ setup(
         description=DESCRIPTION,
         long_description=LONG_DESCRIPTION,
         packages=find_packages(),
+        url='https://github.com/mustafaslanCoto/ARML',
         install_requires=["xgboost", "lightgbm", "catboost", "pandas",
                           "numpy"], # add any additional packages that 
         # needs to be installed along with your package. Eg: 'caer'
