@@ -6,5 +6,4 @@ ARML.egg-info/dependency_links.txt
 ARML.egg-info/requires.txt
 ARML.egg-info/top_level.txt
 arml/__init__.py
-arml/diagnostics.py
 arml/main.py
