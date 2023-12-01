@@ -3,3 +3,10 @@ lightgbm
 catboost
 pandas
 numpy
+sklearn
+datetime
+hyperopt
+statsmodels
+seaborn
+matplotlib
+warnings
