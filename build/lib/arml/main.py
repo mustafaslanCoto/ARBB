@@ -21,10 +21,11 @@ def unit_root_test(series, method = "ADF"):
 
 ## Serial Corelation Check
 from matplotlib import pyplot
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 def plot_PACF_ACF(series, lag_num, figsize = (15, 8)):
     fig, ax = pyplot.subplots(2,1, figsize=figsize)
     plot_pacf(series, lags= lag_num, ax = ax[0])
     plot_acf(series, lags= lag_num, ax = ax[1])
     ax[0].grid(which='both')
     ax[1].grid(which='both')
-    plt.show()
+    pyplot.show()
