@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.0.1' 
+VERSION = '0.0.2' 
 DESCRIPTION = 'Auto regressive machine Learning package'
 LONG_DESCRIPTION = 'Forecating using historical data as predictors'
 
@@ -17,7 +17,7 @@ setup(
         url='https://github.com/mustafaslanCoto/ARML',
         install_requires=["xgboost", "lightgbm", "catboost", "pandas",
                           "numpy", "sklearn", "datetime", "hyperopt","statsmodels", "seaborn",
-                          "matplotlib", "warnings"], # add any additional packages that 
+                          "matplotlib"], # add any additional packages that 
         # needs to be installed along with your package. Eg: 'caer'
         
         keywords=['python', 'first package'],
