@@ -6,7 +6,6 @@ LONG_DESCRIPTION = 'Forecating using historical data as predictors'
 
 # Setting up
 setup(
-       # the name must match the folder name 'verysimplemodule'
         name="ARML", 
         version=VERSION,
         author="Mustafa Aslan",

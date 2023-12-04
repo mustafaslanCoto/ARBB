@@ -31,6 +31,9 @@ def plot_PACF_ACF(series, lag_num, figsize = (15, 8)):
 
 ## Catboost
 import catboost as cat
+from sklearn.model_selection import TimeSeriesSplit
+from hyperopt import fmin, tpe, hp, Trials, STATUS_OK
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 class cat_forecaster:
     def __init__(self, target_col, n_lag, cat_variables = None):
         self.target_col = target_col
@@ -41,7 +44,7 @@ class cat_forecaster:
         dfc = df.copy()
         if self.cat_var is not None:
             for c in self.cat_var:
-                dfc[c] = dfc[c].astype('category')
+                dfc[c] = dfc[c].astype('str')
         for i in range(1, self.n_lag+1):
             dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
         dfc = dfc.dropna()
@@ -55,9 +58,9 @@ class cat_forecaster:
         model_df = self.cat_data_prep(df)
         X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         model_cat.fit(X, self.y, cat_features=self.cat_var, verbose = True)
-        self.model_cat = model_cat
+        return model_cat
     
-    def cat_forecast(self, n_ahead, x_test = None):
+    def cat_forecast(self, model, n_ahead, x_test = None):
         lags = self.y[-self.n_lag:].tolist()
         lags.reverse()
         predictions = []
@@ -66,8 +69,58 @@ class cat_forecaster:
                 inp = x_test.iloc[i, 0:].tolist()+lags
             else:
                 inp = lags
-            pred = self.model_cat.predict(inp)
+            pred = model.predict(inp)
             predictions.append(pred)
             lags.insert(0, pred)
             lags = lags[0:self.n_lag]
         return np.array(predictions)
+    
+
+    def tune_model(self, df, cv_split, test_size, eval_num = 100, iterations = [80, 3000, 10], depth = [3, 12, 1], 
+                learning_rate = [0.0001, 0.3, 0.00001],
+                l2_leaf_reg =  [0, 12, 0.0001],
+                bagging_temperature = [0, 30, 0.001]
+                ):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+
+        def objective(params):
+            model =cat.CatBoostRegressor(iterations = int(params["iterations"]), 
+                                                            learning_rate=params["learning_rate"],
+                                                            depth=int(params["depth"]), 
+                                                            l2_leaf_reg=params["l2_leaf_reg"],
+                                bagging_temperature=params["bagging_temperature"])
+
+            
+            mape = []
+            for train_index, test_index in tscv.split(df):
+                train, test = df.iloc[train_index], df.iloc[test_index]
+                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                model_train = self.cat_data_prep(train)
+                X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                model.fit(X, self.y, cat_features=self.cat_var,
+                            verbose = False)
+                yhat = self.cat_forecast(model, n_ahead =len(y_test), x_test=x_test)
+                accuracy = mean_absolute_percentage_error(y_test, yhat)*100
+                mape.append(accuracy)
+            score = np.mean(mape)
+
+            print ("SCORE:", score)
+            return {'loss':score, 'status':STATUS_OK}
+
+        params={'depth': hp.quniform("depth", depth[0], depth[1], depth[2]),
+                        'learning_rate': hp.quniform('learning_rate', learning_rate[0], learning_rate[1], learning_rate[2]),
+                        'l2_leaf_reg' : hp.quniform('l2_leaf_reg', l2_leaf_reg[0], l2_leaf_reg[1], l2_leaf_reg[2]),
+                        'bagging_temperature' : hp.quniform('bagging_temperature', bagging_temperature[0], bagging_temperature[1], bagging_temperature[2]),
+                        'iterations': hp.quniform("iterations", iterations[0], iterations[1], iterations[2])
+                    }
+
+
+        trials = Trials()
+
+        best_hyperparams = fmin(fn = objective,
+                        space = params,
+                        algo = tpe.suggest,
+                        max_evals = eval_num,
+                        trials = trials)
+        best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
+        return best_params
