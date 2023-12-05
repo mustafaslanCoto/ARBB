@@ -40,7 +40,7 @@ class cat_forecaster:
         self.cat_var = cat_variables
         self.n_lag = n_lag
         
-    def cat_data_prep(self, df):
+    def data_prep(self, df):
         dfc = df.copy()
         if self.cat_var is not None:
             for c in self.cat_var:
@@ -50,17 +50,17 @@ class cat_forecaster:
         dfc = dfc.dropna()
         return dfc
     
-    def fit_cat(self, df, param = None):
+    def fit(self, df, param = None):
         if param is not None:
             model_cat = cat.CatBoostRegressor(**param)
         else:
             model_cat = cat.CatBoostRegressor()
-        model_df = self.cat_data_prep(df)
+        model_df = self.data_prep(df)
         X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         model_cat.fit(X, self.y, cat_features=self.cat_var, verbose = True)
         return model_cat
     
-    def cat_forecast(self, model, n_ahead, x_test = None):
+    def forecast(self, model, n_ahead, x_test = None):
         lags = self.y[-self.n_lag:].tolist()
         lags.reverse()
         predictions = []
@@ -95,11 +95,11 @@ class cat_forecaster:
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.cat_data_prep(train)
+                model_train = self.data_prep(train)
                 X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
                 model.fit(X, self.y, cat_features=self.cat_var,
                             verbose = False)
-                yhat = self.cat_forecast(model, n_ahead =len(y_test), x_test=x_test)
+                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
                 accuracy = mean_absolute_percentage_error(y_test, yhat)*100
                 mape.append(accuracy)
             score = np.mean(mape)
@@ -123,4 +123,115 @@ class cat_forecaster:
                         max_evals = eval_num,
                         trials = trials)
         best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
+        return best_params
+    
+import lightgbm as lgb
+class lightGBM_forecaster:
+    def __init__(self, target_col, n_lag, cat_variables = None):
+        self.target_col = target_col
+        self.cat_var = cat_variables
+        self.n_lag = n_lag
+        
+    def data_prep(self, df):
+        dfc = df.copy()
+        if self.cat_var is not None:
+            for c in self.cat_var:
+                dfc[c] = dfc[c].astype('category')
+        for i in range(1, self.n_lag+1):
+            dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+        dfc = dfc.dropna()
+        return dfc
+    
+    def fit(self, df, param = None):
+        if param is not None:
+            model_lgb =lgb.LGBMRegressor(**param)
+        else:
+            model_lgb =lgb.LGBMRegressor()
+        model_df = self.data_prep(df)
+        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var, verbose = True)
+        return model_lgb
+    
+    def forecast(self, model, n_ahead, x_test = None):
+        lags = self.y[-self.n_lag:].tolist()
+        lags.reverse()
+        predictions = []
+        for i in range(n_ahead):
+            if x_test is not None:
+                inp = x_test.iloc[i, 0:].tolist()+lags
+            else:
+                inp = lags
+            df_inp = pd.DataFrame(inp).T
+            df_inp.columns = self.X.columns
+            for i in df_inp.columns:
+                if i in self.cat_var:
+                    df_inp[i] = df_inp[i].astype('category')
+                else:
+                    df_inp[i] = df_inp[i].astype('float64')
+            pred = model.predict(df_inp)[0]
+            predictions.append(pred)
+            lags.insert(0, pred)
+            lags = lags[0:self.n_lag]
+        return np.array(predictions)
+    
+    def tune_model(self, df, cv_split, test_size, eval_num = 100, num_iterations = [50, 2500, 10], learning_rate = [0.001, 0.4, 0.0001],
+                  num_leaves=[5, 100, 1], max_depth = [5, 100, 1], bagging_fraction = [0.5, 1, 0.00001],
+                  feature_fraction = [0.5, 1, 0.00001], min_data_in_leaf = [10, 50, 1], lambda_l2 = [0,10,0.00001],
+                   lambda_l1 = [0, 10, 0.00001], min_gain_to_split = [0, 50, 0.00001], top_rate = [0.05, 0.4, 0.0001],
+                  other_rate = [0.05, 0.3, 0.0001], top_k = [10, 40, 1]):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        def objective(params):
+            model =lgb.LGBMRegressor(num_iterations =int(params['num_iterations']),
+                                        num_leaves = int(params['num_leaves']),
+                                        max_depth = int(params['max_depth']),
+                                        min_data_in_leaf = int(params['min_data_in_leaf']),
+                                        feature_fraction = params['feature_fraction'],
+                                        bagging_fraction = params['bagging_fraction'], lambda_l2 = params['lambda_l2'],
+                                     lambda_l1 = params['lambda_l1'],
+                             min_gain_to_split = params['min_gain_to_split'], top_rate = params['top_rate'],
+                                     other_rate=params['other_rate'], learning_rate = params['learning_rate'],
+                                      top_k = int(params["top_k"]))
+
+            mape = []
+            for train_index, test_index in tscv.split(df):
+                train, test = df.iloc[train_index], df.iloc[test_index]
+                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                model_train = self.data_prep(train)
+                X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                model.fit(X, self.y, categorical_feature=self.cat_var,
+                            verbose = True)
+                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                accuracy = mean_absolute_percentage_error(y_test, yhat)*100
+                mape.append(accuracy)
+            score = np.mean(mape)
+
+            print ("SCORE:", score)
+            return {'loss':score, 'status':STATUS_OK}
+            
+        params={'learning_rate': hp.quniform('learning_rate', learning_rate[0], learning_rate[1], learning_rate[2]),
+                    'num_leaves': hp.quniform('num_leaves', num_leaves[0], num_leaves[1], num_leaves[2]),
+                   'max_depth':hp.quniform('max_depth', max_depth[0], max_depth[1], max_depth[2]),
+                    'bagging_fraction': hp.quniform('bagging_fraction', 0.5, 1, 0.00001),
+                    'feature_fraction': hp.quniform('feature_fraction', 0.5, 1, 0.00001),
+                   'min_data_in_leaf': hp.quniform ('min_data_in_leaf', 10, 50, 1), 
+                    'lambda_l2' : hp.quniform('lambda_l2', 0,10,0.00001),
+                   'lambda_l1' : hp.quniform('lambda_l1', 0, 10, 0.00001),
+                    'min_gain_to_split':hp.quniform('min_gain_to_split', 0, 50, 0.00001),
+                   'top_rate' : hp.quniform('top_rate', 0.05, 0.4, 0.0001),
+                    'other_rate' : hp.quniform('other_rate', 0.05, 0.3, 0.0001),
+                   'num_iterations': hp.quniform("num_iterations", 50, 2500, 10),
+                   'top_k': hp.quniform('top_k', 10, 40, 1),
+                   'seed': 0}
+            
+            
+        trials = Trials()
+
+        best_hyperparams = fmin(fn = objective,
+                        space = params,
+                        algo = tpe.suggest,
+                        max_evals = eval_num,
+                        trials = trials)
+        best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
+                           else best_hyperparams[i] for i in best_hyperparams}
         return best_params
