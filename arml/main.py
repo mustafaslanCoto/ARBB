@@ -235,3 +235,122 @@ class lightGBM_forecaster:
         best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
                            else best_hyperparams[i] for i in best_hyperparams}
         return best_params
+    
+
+import xgboost as xgb
+class xgboost_forecaster:
+    def __init__(self, target_col, n_lag, cat_variables = None):
+        self.target_col = target_col
+        self.cat_var = cat_variables
+        self.n_lag = n_lag
+        
+    
+        
+    def data_prep(self, df):
+        dfc = df.copy()
+        if self.cat_var is not None:
+            for c in self.cat_var:
+                dfc[c] = dfc[c].astype('category')
+        for i in range(1, self.n_lag+1):
+            dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+        dfc = dfc.dropna()
+        return dfc
+    
+    def fit(self, df, param = None):
+        if param is not None:
+            if self.cat_var is not None:
+                model_xgb =xgb.XGBRegressor(enable_categorical=True, **param)
+            else:
+                model_xgb =xgb.XGBRegressor(**param)
+        else:
+            if self.cat_var is not None:
+                model_xgb =xgb.XGBRegressor(enable_categorical=True)
+            else:
+                model_xgb =xgb.XGBRegressor()
+        model_df = self.data_prep(df)
+        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        model_xgb.fit(self.X, self.y, verbose = True)
+        return model_xgb
+    
+    def forecast(self, model, n_ahead, x_test = None):
+        lags = self.y[-self.n_lag:].tolist()
+        lags.reverse()
+        predictions = []
+        for i in range(n_ahead):
+            if x_test is not None:
+                inp = x_test.iloc[i, 0:].tolist()+lags
+            else:
+                inp = lags
+            df_inp = pd.DataFrame(inp).T
+            df_inp.columns = self.X.columns
+            for i in df_inp.columns:
+                if i in self.cat_var:
+                    df_inp[i] = df_inp[i].astype('category')
+                else:
+                    df_inp[i] = df_inp[i].astype('float64')
+            pred = model.predict(df_inp)[0]
+            predictions.append(pred)
+            lags.insert(0, pred)
+            lags = lags[0:self.n_lag]
+        return np.array(predictions)
+
+    
+    def tune_model(self, df, cv_split, test_size, eval_num= 100, n_estimators = [50, 2500, 10], max_depth = [3, 15, 1],
+                  gamma = [0, 10, 0.0001], reg_lambda = [0, 10, 0.0001],
+                  colsample_bytree = [0.5, 1, 0.001], min_child_weight = [0, 9, 0.001],
+                  learning_rate = [0.001, 0.4, 0.0001], colsample_bynode = [0.5, 1, 0.0001], reg_alpha = [0,5,0.001]):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        def objective(params):
+            if self.cat_var is not None:
+                model =xgb.XGBRegressor(n_estimators =int(params['n_estimators']),
+                                     max_depth = int(params['max_depth']), gamma = params['gamma'],
+                                     reg_lambda = params['reg_lambda'], colsample_bytree = params['colsample_bytree'],
+                                     min_child_weight=int(params['min_child_weight']), learning_rate = params['learning_rate'],
+                                      colsample_bynode = params["colsample_bynode"],
+                                      reg_alpha = params["reg_alpha"], enable_categorical = True)
+            else:
+                model =xgb.XGBRegressor(n_estimators =int(params['n_estimators']),
+                                     max_depth = int(params['max_depth']), gamma = params['gamma'],
+                                     reg_lambda = params['reg_lambda'], colsample_bytree = params['colsample_bytree'],
+                                     min_child_weight=int(params['min_child_weight']), learning_rate = params['learning_rate'],
+                                      colsample_bynode = params["colsample_bynode"],
+                                      reg_alpha = params["reg_alpha"])   
+                
+            mape = []
+            for train_index, test_index in tscv.split(df):
+                train, test = df.iloc[train_index], df.iloc[test_index]
+                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                model_train = self.data_prep(train)
+                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                model.fit(self.X, self.y, verbose = True)
+                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                accuracy = mean_absolute_percentage_error(y_test, yhat)*100
+                mape.append(accuracy)
+            score = np.mean(mape)
+
+            print ("SCORE:", score)
+            return {'loss':score, 'status':STATUS_OK}
+        
+        params={'max_depth': hp.quniform("max_depth", max_depth[0], max_depth[1], max_depth[2]), 
+                   'learning_rate': hp.quniform('learning_rate', learning_rate[0], learning_rate[1], learning_rate[2]),
+                   'gamma': hp.quniform ('gamma', 0, 10, 0.0001), 'reg_alpha' : hp.quniform('reg_alpha', reg_alpha[0],reg_alpha[1],reg_alpha[2]),
+                   'reg_lambda' : hp.quniform('reg_lambda', reg_lambda[0], reg_lambda[1], reg_lambda[2]),
+                   'min_child_weight' : hp.quniform('min_child_weight', min_child_weight[0], min_child_weight[1], min_child_weight[2]),
+                   'n_estimators': hp.quniform("n_estimators", n_estimators[0], n_estimators[1], n_estimators[2]),
+                   'colsample_bytree': hp.quniform('colsample_bytree', colsample_bytree[0], colsample_bytree[1], colsample_bytree[2]),
+                   'colsample_bynode': hp.quniform('colsample_bynode', colsample_bynode[0], colsample_bynode[1], colsample_bynode[2]),
+                   'seed': 0}
+            
+            
+        trials = Trials()
+
+        best_hyperparams = fmin(fn = objective,
+                        space = params,
+                        algo = tpe.suggest,
+                        max_evals = eval_num,
+                        trials = trials)
+        best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
+                           else best_hyperparams[i] for i in best_hyperparams}
+        return best_params
+            
