@@ -239,9 +239,9 @@ class lightGBM_forecaster:
 
 import xgboost as xgb
 class xgboost_forecaster:
-    def __init__(self, target_col, n_lag, cat_variables = None):
+    def __init__(self, target_col, n_lag, cat_dict = None):
         self.target_col = target_col
-        self.cat_var = cat_variables
+        self.cat_var = cat_dict
         self.n_lag = n_lag
         
     
@@ -249,30 +249,28 @@ class xgboost_forecaster:
     def data_prep(self, df):
         dfc = df.copy()
         if self.cat_var is not None:
-            for c in self.cat_var:
-                dfc[c] = dfc[c].astype('category')
-        for i in range(1, self.n_lag+1):
-            dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+            for col, cat in self.cat_var.items():
+                dfc[col] = dfc[col].astype('category')
+                dfc[col] = dfc[col].cat.set_categories(cat)
+            dfc = pd.get_dummies(dfc)
+        if self.target_col in dfc.columns:
+            for i in range(1, self.n_lag+1):
+                dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
         dfc = dfc.dropna()
         return dfc
     
     def fit(self, df, param = None):
         if param is not None:
-            if self.cat_var is not None:
-                model_xgb =xgb.XGBRegressor(enable_categorical=True, **param)
-            else:
-                model_xgb =xgb.XGBRegressor(**param)
+            model_xgb =xgb.XGBRegressor(**param)
         else:
-            if self.cat_var is not None:
-                model_xgb =xgb.XGBRegressor(enable_categorical=True)
-            else:
-                model_xgb =xgb.XGBRegressor()
+            model_xgb =xgb.XGBRegressor()
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         model_xgb.fit(self.X, self.y, verbose = True)
         return model_xgb
     
     def forecast(self, model, n_ahead, x_test = None):
+        x_test = self.data_prep(x_test)
         lags = self.y[-self.n_lag:].tolist()
         lags.reverse()
         predictions = []
@@ -283,11 +281,7 @@ class xgboost_forecaster:
                 inp = lags
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
-            for i in df_inp.columns:
-                if i in self.cat_var:
-                    df_inp[i] = df_inp[i].astype('category')
-                else:
-                    df_inp[i] = df_inp[i].astype('float64')
+
             pred = model.predict(df_inp)[0]
             predictions.append(pred)
             lags.insert(0, pred)
@@ -302,15 +296,7 @@ class xgboost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if self.cat_var is not None:
-                model =xgb.XGBRegressor(n_estimators =int(params['n_estimators']),
-                                     max_depth = int(params['max_depth']), gamma = params['gamma'],
-                                     reg_lambda = params['reg_lambda'], colsample_bytree = params['colsample_bytree'],
-                                     min_child_weight=int(params['min_child_weight']), learning_rate = params['learning_rate'],
-                                      colsample_bynode = params["colsample_bynode"],
-                                      reg_alpha = params["reg_alpha"], enable_categorical = True)
-            else:
-                model =xgb.XGBRegressor(n_estimators =int(params['n_estimators']),
+            model =xgb.XGBRegressor(n_estimators =int(params['n_estimators']),
                                      max_depth = int(params['max_depth']), gamma = params['gamma'],
                                      reg_lambda = params['reg_lambda'], colsample_bytree = params['colsample_bytree'],
                                      min_child_weight=int(params['min_child_weight']), learning_rate = params['learning_rate'],

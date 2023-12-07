@@ -1,9 +1,0 @@
-README.md
-setup.py
-ARML.egg-info/PKG-INFO
-ARML.egg-info/SOURCES.txt
-ARML.egg-info/dependency_links.txt
-ARML.egg-info/requires.txt
-ARML.egg-info/top_level.txt
-arml/__init__.py
-arml/main.py
