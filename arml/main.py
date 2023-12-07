@@ -320,7 +320,7 @@ class xgboost_forecaster:
         
         params={'max_depth': hp.quniform("max_depth", max_depth[0], max_depth[1], max_depth[2]), 
                    'learning_rate': hp.quniform('learning_rate', learning_rate[0], learning_rate[1], learning_rate[2]),
-                   'gamma': hp.quniform ('gamma', 0, 10, 0.0001), 'reg_alpha' : hp.quniform('reg_alpha', reg_alpha[0],reg_alpha[1],reg_alpha[2]),
+                   'gamma': hp.quniform ('gamma', gamma[0], gamma[1], gamma[2]), 'reg_alpha' : hp.quniform('reg_alpha', reg_alpha[0],reg_alpha[1],reg_alpha[2]),
                    'reg_lambda' : hp.quniform('reg_lambda', reg_lambda[0], reg_lambda[1], reg_lambda[2]),
                    'min_child_weight' : hp.quniform('min_child_weight', min_child_weight[0], min_child_weight[1], min_child_weight[2]),
                    'n_estimators': hp.quniform("n_estimators", n_estimators[0], n_estimators[1], n_estimators[2]),
