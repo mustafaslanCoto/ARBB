@@ -47,7 +47,7 @@ class cat_forecaster:
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('str')
-        for i in range(1, self.n_lag+1):
+        for i in self.n_lag:
             dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
         dfc = dfc.dropna()
         return dfc
@@ -63,18 +63,19 @@ class cat_forecaster:
         return model_cat
     
     def forecast(self, model, n_ahead, x_test = None):
-        lags = self.y[-self.n_lag:].tolist()
-        lags.reverse()
+        max_lag = self.n_lag[-1]
+        lags = self.y[-max_lag:].tolist()
         predictions = []
         for i in range(n_ahead):
+            inp_lag = [lags[-i] for i in self.n_lag]
             if x_test is not None:
-                inp = x_test.iloc[i, 0:].tolist()+lags
+                inp = x_test.iloc[i, 0:].tolist()+inp_lag
             else:
-                inp = lags
+                inp = inp_lag
             pred = model.predict(inp)
             predictions.append(pred)
-            lags.insert(0, pred)
-            lags = lags[0:self.n_lag]
+            lags.append(pred)
+            lags = lags[-max_lag:]
         return np.array(predictions)
     
 
@@ -125,7 +126,7 @@ class lightGBM_forecaster:
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('category')
-        for i in range(1, self.n_lag+1):
+        for i in self.n_lag:
             dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
         dfc = dfc.dropna()
         return dfc
@@ -141,14 +142,15 @@ class lightGBM_forecaster:
         return model_lgb
     
     def forecast(self, model, n_ahead, x_test = None):
-        lags = self.y[-self.n_lag:].tolist()
-        lags.reverse()
+        max_lag = self.n_lag[-1]
+        lags = self.y[-max_lag:].tolist()
         predictions = []
         for i in range(n_ahead):
+            inp_lag = [lags[-i] for i in self.n_lag]
             if x_test is not None:
-                inp = x_test.iloc[i, 0:].tolist()+lags
+                inp = x_test.iloc[i, 0:].tolist()+inp_lag
             else:
-                inp = lags
+                inp = inp_lag
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
             for i in df_inp.columns:
@@ -158,8 +160,8 @@ class lightGBM_forecaster:
                     df_inp[i] = df_inp[i].astype('float64')
             pred = model.predict(df_inp)[0]
             predictions.append(pred)
-            lags.insert(0, pred)
-            lags = lags[0:self.n_lag]
+            lags.append(pred)
+            lags = lags[-max_lag:]
         return np.array(predictions)
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_num = 100):
@@ -215,7 +217,7 @@ class xgboost_forecaster:
                 dfc[col] = dfc[col].cat.set_categories(cat)
             dfc = pd.get_dummies(dfc)
         if self.target_col in dfc.columns:
-            for i in range(1, self.n_lag+1):
+            for i in self.n_lag:
                 dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
         dfc = dfc.dropna()
         return dfc
@@ -232,22 +234,24 @@ class xgboost_forecaster:
     
     def forecast(self, model, n_ahead, x_test = None):
         x_test = self.data_prep(x_test)
-        lags = self.y[-self.n_lag:].tolist()
-        lags.reverse()
+        max_lag = self.n_lag[-1]
+        lags = self.y[-max_lag:].tolist()    
         predictions = []
         for i in range(n_ahead):
-            if x_test is not None:
-                inp = x_test.iloc[i, 0:].tolist()+lags
+            if x_test is not None: 
+                inp_lag = [lags[-i] for i in self.n_lag]
+                inp = x_test.iloc[i, 0:].tolist()+inp_lag
             else:
-                inp = lags
+                inp = [lags[-i] for i in self.n_lag]
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
 
             pred = model.predict(df_inp)[0]
             predictions.append(pred)
-            lags.insert(0, pred)
-            lags = lags[0:self.n_lag]
+            lags.append(pred)
+            lags = lags[-max_lag:]
         return np.array(predictions)
+
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_num= 100):
