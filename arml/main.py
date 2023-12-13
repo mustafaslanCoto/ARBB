@@ -30,6 +30,7 @@ def plot_PACF_ACF(series, lag_num, figsize = (15, 8)):
     pyplot.show()
 
 ## Catboost
+from window_ops.rolling import rolling_mean, rolling_max, rolling_min, rolling_std
 import catboost as cat
 from sklearn.model_selection import TimeSeriesSplit
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK
@@ -37,18 +38,25 @@ from hyperopt.pyll import scope
 
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 class cat_forecaster:
-    def __init__(self, target_col, n_lag, cat_variables = None):
+    def __init__(self, target_col, n_lag, lag_transform = None, cat_variables = None):
         self.target_col = target_col
         self.cat_var = cat_variables
         self.n_lag = n_lag
+        self.lag_transform = lag_transform
         
     def cat_data_prep(self, df):
         dfc = df.copy()
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('str')
-        for i in self.n_lag:
-            dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+        if self.n_lag is not None:
+            for i in self.n_lag:
+                dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+            
+        if self.lag_transform is not None:
+            df_array = np.array(dfc[self.target_col])
+            for i, j in self.lag_transform.items():
+                dfc[i.__name__+"_"+str(j)] = i(df_array, j) 
         dfc = dfc.dropna()
         return dfc
     
@@ -63,19 +71,30 @@ class cat_forecaster:
         return model_cat
     
     def forecast(self, model, n_ahead, x_test = None):
-        max_lag = self.n_lag[-1]
-        lags = self.y[-max_lag:].tolist()
+        lags = self.y.tolist()
         predictions = []
         for i in range(n_ahead):
-            inp_lag = [lags[-i] for i in self.n_lag]
             if x_test is not None:
-                inp = x_test.iloc[i, 0:].tolist()+inp_lag
+                x_var = x_test.iloc[i, 0:].tolist()
             else:
-                inp = inp_lag
+                x_var = []
+            if self.n_lag is not None:
+                inp_lag = [lags[-i] for i in self.n_lag]
+            else:
+                inp_lag = []
+                
+            lag_array = np.array(lags) # array is needed for transformation fuctions
+            if self.lag_transform is not None:
+                transform_lag = []
+                for method, lag in self.lag_transform.items():
+                    tl = method(lag_array, lag)[-1]
+                    transform_lag.append(tl)
+            else:
+                transform_lag = []
+            inp = x_var + inp_lag+transform_lag
             pred = model.predict(inp)
             predictions.append(pred)
             lags.append(pred)
-            lags = lags[-max_lag:]
         return np.array(predictions)
     
 
@@ -116,18 +135,27 @@ class cat_forecaster:
     
 import lightgbm as lgb
 class lightGBM_forecaster:
-    def __init__(self, target_col, n_lag, cat_variables = None):
+    def __init__(self, target_col, n_lag, lag_transform = None, cat_variables = None):
         self.target_col = target_col
         self.cat_var = cat_variables
         self.n_lag = n_lag
+        self.lag_transform = lag_transform
         
     def data_prep(self, df):
         dfc = df.copy()
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('category')
-        for i in self.n_lag:
-            dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+                
+        if self.n_lag is not None:
+            for i in self.n_lag:
+                dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+            
+        if self.lag_transform is not None:
+            df_array = np.array(dfc[self.target_col])
+            for i, j in self.lag_transform.items():
+                dfc[i.__name__+"_"+str(j)] = i(df_array, j)   
+            
         dfc = dfc.dropna()
         return dfc
     
@@ -142,26 +170,40 @@ class lightGBM_forecaster:
         return model_lgb
     
     def forecast(self, model, n_ahead, x_test = None):
-        max_lag = self.n_lag[-1]
-        lags = self.y[-max_lag:].tolist()
+        lags = self.y.tolist()
         predictions = []
         for i in range(n_ahead):
-            inp_lag = [lags[-i] for i in self.n_lag]
             if x_test is not None:
-                inp = x_test.iloc[i, 0:].tolist()+inp_lag
+                x_var = x_test.iloc[i, 0:].tolist()
             else:
-                inp = inp_lag
+                x_var = []
+            if self.n_lag is not None:
+                inp_lag = [lags[-i] for i in self.n_lag]
+            else:
+                inp_lag = []
+                
+            lag_array = np.array(lags) # array is needed for transformation fuctions
+            if self.lag_transform is not None:
+                transform_lag = []
+                for method, lag in self.lag_transform.items():
+                    tl = method(lag_array, lag)[-1]
+                    transform_lag.append(tl)
+            else:
+                transform_lag = []
+            inp = x_var + inp_lag+transform_lag
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
             for i in df_inp.columns:
-                if i in self.cat_var:
-                    df_inp[i] = df_inp[i].astype('category')
+                if self.cat_var is not None:
+                    if i in self.cat_var:
+                        df_inp[i] = df_inp[i].astype('category')
+                    else:
+                        df_inp[i] = df_inp[i].astype('float64')
                 else:
                     df_inp[i] = df_inp[i].astype('float64')
             pred = model.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
-            lags = lags[-max_lag:]
         return np.array(predictions)
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_num = 100):
@@ -202,10 +244,11 @@ class lightGBM_forecaster:
 
 import xgboost as xgb
 class xgboost_forecaster:
-    def __init__(self, target_col, n_lag, cat_dict = None):
+    def __init__(self, target_col, n_lag, lag_transform = None, cat_dict = None):
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
+        self.lag_transform = lag_transform
         
     
         
@@ -217,11 +260,17 @@ class xgboost_forecaster:
                 dfc[col] = dfc[col].cat.set_categories(cat)
             dfc = pd.get_dummies(dfc)
         if self.target_col in dfc.columns:
-            for i in self.n_lag:
-                dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+            if self.n_lag is not None:
+                for i in self.n_lag:
+                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+                
+            if self.lag_transform is not None:
+                df_array = np.array(dfc[self.target_col])
+                for i, j in self.lag_transform.items():
+                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
         dfc = dfc.dropna()
         return dfc
-    
+
     def fit(self, df, param = None):
         if param is not None:
             model_xgb =xgb.XGBRegressor(**param)
@@ -231,27 +280,42 @@ class xgboost_forecaster:
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         model_xgb.fit(self.X, self.y, verbose = True)
         return model_xgb
-    
+
     def forecast(self, model, n_ahead, x_test = None):
-        x_test = self.data_prep(x_test)
-        max_lag = self.n_lag[-1]
-        lags = self.y[-max_lag:].tolist()    
+        x_dummy = self.data_prep(x_test)
+#         max_lag = self.n_lag[-1]
+#         lags = self.y[-max_lag:].tolist()
+        lags = self.y.tolist()
         predictions = []
         for i in range(n_ahead):
-            if x_test is not None: 
-                inp_lag = [lags[-i] for i in self.n_lag]
-                inp = x_test.iloc[i, 0:].tolist()+inp_lag
+            if x_test is not None:
+                x_var = x_dummy.iloc[i, 0:].tolist()
             else:
-                inp = [lags[-i] for i in self.n_lag]
+                x_var = []
+                
+            if self.n_lag is not None:
+                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
+            else:
+                inp_lag = []
+            if self.lag_transform is not None:
+                lag_array = np.array(lags) # array is needed for transformation fuctions
+                transform_lag = []
+                for method, lag in self.lag_transform.items():
+                    tl = method(lag_array, lag)[-1]
+                    transform_lag.append(tl)
+            else:
+                transform_lag = []
+                    
+                    
+            inp = x_var+inp_lag+transform_lag
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
 
             pred = model.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
-            lags = lags[-max_lag:]
+#             lags = lags[-max_lag:]
         return np.array(predictions)
-
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_num= 100):
@@ -287,3 +351,4 @@ class xgboost_forecaster:
         best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
                            else best_hyperparams[i] for i in best_hyperparams}
         return best_params
+            
