@@ -38,7 +38,7 @@ from hyperopt.pyll import scope
 
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 class cat_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, cat_variables = None):
+    def __init__(self, target_col, n_lag = None, lag_transform = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.target_col = target_col
@@ -137,7 +137,7 @@ class cat_forecaster:
     
 import lightgbm as lgb
 class lightGBM_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, cat_variables = None):
+    def __init__(self, target_col, n_lag = None, lag_transform = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.target_col = target_col
@@ -248,7 +248,7 @@ class lightGBM_forecaster:
 
 import xgboost as xgb
 class xgboost_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, target_col, n_lag = None, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.target_col = target_col
