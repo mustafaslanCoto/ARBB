@@ -248,14 +248,14 @@ class lightGBM_forecaster:
 
 import xgboost as xgb
 class xgboost_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, cat_dict = None):
+    def __init__(self, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
         self.lag_transform = lag_transform
-        
+        self.drop_categ = drop_categ
     
         
     def data_prep(self, df):
@@ -265,6 +265,10 @@ class xgboost_forecaster:
                 dfc[col] = dfc[col].astype('category')
                 dfc[col] = dfc[col].cat.set_categories(cat)
             dfc = pd.get_dummies(dfc)
+        if self.drop_categ is not None:
+            for i in self.drop_categ:
+                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+                
         if self.target_col in dfc.columns:
             if self.n_lag is not None:
                 for i in self.n_lag:
