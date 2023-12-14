@@ -221,8 +221,8 @@ class lightGBM_forecaster:
                 train, test = df.iloc[train_index], df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
                 model_train = self.data_prep(train)
-                X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                model.fit(X, self.y, categorical_feature=self.cat_var,
+                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                model.fit(self.X, self.y, categorical_feature=self.cat_var,
                             verbose = False)
                 yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
                 accuracy = mean_absolute_percentage_error(y_test, yhat)*100
