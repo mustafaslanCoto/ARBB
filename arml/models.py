@@ -1,39 +1,12 @@
 import pandas as pd
 import numpy as np
-##Stationarity Check
-from statsmodels.tsa.stattools import adfuller, kpss
-def unit_root_test(series, method = "ADF"):
-    if method == "ADF":
-        adf = adfuller(series, autolag = 'AIC')[1]
-        if adf < 0.05:
-            return adf, print('ADF p-value: %f' % adf + " and data is stationary at 5% significance level")
-        else:
-            return adf, print('ADF p-value: %f' % adf + " and data is non-stationary at 5% significance level")
-    elif method == "KPSS":
-        kps = kpss(series)[1]
-        if kps < 0.05:
-            return kps, print('KPSS p-value: %f' % kps + " and data is non-stationary at 5% significance level")
-        else:
-            return kps, print('KPSS p-value: %f' % kps + " and data is stationary at 5% significance level")
-    else:
-        return print('Enter a valid unit root test method')
 
-## Serial Corelation Check
-from matplotlib import pyplot
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-def plot_PACF_ACF(series, lag_num, figsize = (15, 8)):
-    fig, ax = pyplot.subplots(2,1, figsize=figsize)
-    plot_pacf(series, lags= lag_num, ax = ax[0])
-    plot_acf(series, lags= lag_num, ax = ax[1])
-    ax[0].grid(which='both')
-    ax[1].grid(which='both')
-    pyplot.show()
 
 ## Catboost
 from window_ops.rolling import rolling_mean, rolling_max, rolling_min, rolling_std
 import catboost as cat
 from sklearn.model_selection import TimeSeriesSplit
-from hyperopt import fmin, tpe, hp, Trials, STATUS_OK
+from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from hyperopt.pyll import scope
 
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
@@ -101,14 +74,14 @@ class cat_forecaster:
         return np.array(predictions)
     
 
-    def tune_model(self, df, cv_split, test_size, param_space, eval_num = 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num = 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
 
         def objective(params):
             model =cat.CatBoostRegressor(**params)
 
             
-            mape = []
+            metric = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
@@ -117,10 +90,10 @@ class cat_forecaster:
                 model.fit(X, self.y, cat_features=self.cat_var,
                             verbose = False)
                 yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
-                accuracy = mean_absolute_percentage_error(y_test, yhat)*100
+                accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                mape.append(accuracy)
-            score = np.mean(mape)
+                metric.append(accuracy)
+            score = np.mean(metric)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -133,8 +106,8 @@ class cat_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
-        return best_params
+        # best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
+        return space_eval(param_space, best_hyperparams)
     
 import lightgbm as lgb
 class lightGBM_forecaster:
@@ -211,13 +184,13 @@ class lightGBM_forecaster:
             lags.append(pred)
         return np.array(predictions)
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_num = 100):
+    def tune_model(self, df, cv_split, test_size, param_space,eval_metric, eval_num = 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
             model =lgb.LGBMRegressor(**params)
 
-            mape = []
+            metric = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
@@ -226,10 +199,10 @@ class lightGBM_forecaster:
                 model.fit(self.X, self.y, categorical_feature=self.cat_var,
                             verbose = False)
                 yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
-                accuracy = mean_absolute_percentage_error(y_test, yhat)*100
+                accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                mape.append(accuracy)
-            score = np.mean(mape)
+                metric.append(accuracy)
+            score = np.mean(metric)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -241,9 +214,9 @@ class lightGBM_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-                           else best_hyperparams[i] for i in best_hyperparams}
-        return best_params
+        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
+        #                    else best_hyperparams[i] for i in best_hyperparams}
+        return space_eval(param_space, best_hyperparams)
             
     
 
@@ -329,13 +302,13 @@ class xgboost_forecaster:
         return np.array(predictions)
 
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
             model =xgb.XGBRegressor(**params)   
                 
-            mape = []
+            metric = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
@@ -343,10 +316,10 @@ class xgboost_forecaster:
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
                 model.fit(self.X, self.y, verbose = True)
                 yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
-                accuracy = mean_absolute_percentage_error(y_test, yhat)*100
+                accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                mape.append(accuracy)
-            score = np.mean(mape)
+                metric.append(accuracy)
+            score = np.mean(metric)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -359,9 +332,9 @@ class xgboost_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
-                           else best_hyperparams[i] for i in best_hyperparams}
-        return best_params
+        # best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
+        #                    else best_hyperparams[i] for i in best_hyperparams}
+        return space_eval(param_space, best_hyperparams)
     
 from sklearn.ensemble import AdaBoostRegressor, RandomForestRegressor
 class RandomForest_forecaster:
@@ -445,13 +418,13 @@ class RandomForest_forecaster:
         return np.array(predictions)
 
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
             model =RandomForestRegressor(**params)   
                 
-            mape = []
+            metric = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
@@ -459,10 +432,10 @@ class RandomForest_forecaster:
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
                 model.fit(self.X, self.y)
                 yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
-                accuracy = mean_absolute_percentage_error(y_test, yhat)*100
+                accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                mape.append(accuracy)
-            score = np.mean(mape)
+                metric.append(accuracy)
+            score = np.mean(metric)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -475,7 +448,122 @@ class RandomForest_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf"] 
-                           else best_hyperparams[i] for i in best_hyperparams}
-        return best_params
+        # best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf"] 
+        #                    else best_hyperparams[i] for i in best_hyperparams}
+        return space_eval(param_space, best_hyperparams)
+    
+class AdaBoost_forecaster:
+    def __init__(self, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
+        if (n_lag == None) and (lag_transform == None):
+            raise ValueError('Expected either n_lag or lag_transform args')
+        self.target_col = target_col
+        self.cat_var = cat_dict
+        self.n_lag = n_lag
+        self.lag_transform = lag_transform
+        self.drop_categ = drop_categ
+        
+    
+        
+    def data_prep(self, df):
+        dfc = df.copy()
+        if self.cat_var is not None:
+            for col, cat in self.cat_var.items():
+                dfc[col] = dfc[col].astype('category')
+                dfc[col] = dfc[col].cat.set_categories(cat)
+            dfc = pd.get_dummies(dfc)
+        if self.drop_categ is not None:
+            for i in self.drop_categ:
+                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+        if self.target_col in dfc.columns:
+            if self.n_lag is not None:
+                for i in self.n_lag:
+                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+                
+            if self.lag_transform is not None:
+                df_array = np.array(dfc[self.target_col])
+                for i, j in self.lag_transform.items():
+                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
+        dfc = dfc.dropna()
+        return dfc
+
+    def fit(self, df, param = None):
+        if param is not None:
+            model_ada =AdaBoostRegressor(**param)
+        else:
+            model_ada =AdaBoostRegressor()
+        model_df = self.data_prep(df)
+        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        model_ada.fit(self.X, self.y)
+        return model_ada
+
+    def forecast(self, model, n_ahead, x_test = None):
+        x_dummy = self.data_prep(x_test)
+#         max_lag = self.n_lag[-1]
+#         lags = self.y[-max_lag:].tolist()
+        lags = self.y.tolist()
+        predictions = []
+        for i in range(n_ahead):
+            if x_test is not None:
+                x_var = x_dummy.iloc[i, 0:].tolist()
+            else:
+                x_var = []
+                
+            if self.n_lag is not None:
+                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
+            else:
+                inp_lag = []
+            if self.lag_transform is not None:
+                lag_array = np.array(lags) # array is needed for transformation fuctions
+                transform_lag = []
+                for method, lag in self.lag_transform.items():
+                    tl = method(lag_array, lag)[-1]
+                    transform_lag.append(tl)
+            else:
+                transform_lag = []
+                    
+                    
+            inp = x_var+inp_lag+transform_lag
+            df_inp = pd.DataFrame(inp).T
+            df_inp.columns = self.X.columns
+
+            pred = model.predict(df_inp)[0]
+            predictions.append(pred)
+            lags.append(pred)
+#             lags = lags[-max_lag:]
+        return np.array(predictions)
+
+    
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        def objective(params):
+            model =AdaBoostRegressor(**params)   
+                
+            metric = []
+            for train_index, test_index in tscv.split(df):
+                train, test = df.iloc[train_index], df.iloc[test_index]
+                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                model_train = self.data_prep(train)
+                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                model.fit(self.X, self.y)
+                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                accuracy = eval_metric(y_test, yhat)*100
+#                 print(str(accuracy)+" and len is "+str(len(test)))
+                metric.append(accuracy)
+            score = np.mean(metric)
+
+            print ("SCORE:", score)
+            return {'loss':score, 'status':STATUS_OK}
+            
+            
+        trials = Trials()
+
+        best_hyperparams = fmin(fn = objective,
+                        space = param_space,
+                        algo = tpe.suggest,
+                        max_evals = eval_num,
+                        trials = trials)
+#         best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf"] 
+#                            else best_hyperparams[i] for i in best_hyperparams}
+        return space_eval(param_space, best_hyperparams)
             
