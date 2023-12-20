@@ -20,7 +20,7 @@ class cat_forecaster:
         self.n_lag = n_lag
         self.lag_transform = lag_transform
         
-    def cat_data_prep(self, df):
+    def data_prep(self, df):
         dfc = df.copy()
         if self.cat_var is not None:
             for c in self.cat_var:

@@ -54,3 +54,6 @@ def rmse(y_true, y_pred):
     rmse = np.sqrt(mean_squared_error)
 
     return rmse
+
+def smape(y_true, y_pred):
+    return 1/len(y_true) * np.sum(2 * np.abs(y_pred-y_true) / (np.abs(y_true) + np.abs(y_pred))*100)
