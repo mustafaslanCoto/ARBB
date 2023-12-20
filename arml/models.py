@@ -41,7 +41,7 @@ class cat_forecaster:
             model_cat = cat.CatBoostRegressor(**param)
         else:
             model_cat = cat.CatBoostRegressor()
-        model_df = self.cat_data_prep(df)
+        model_df = self.data_prep(df)
         X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         model_cat.fit(X, self.y, cat_features=self.cat_var, verbose = True)
         return model_cat
@@ -85,7 +85,7 @@ class cat_forecaster:
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.cat_data_prep(train)
+                model_train = self.data_prep(train)
                 X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
                 model.fit(X, self.y, cat_features=self.cat_var,
                             verbose = False)
