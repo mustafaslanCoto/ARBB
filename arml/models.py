@@ -38,7 +38,10 @@ class cat_forecaster:
         return dfc
     
     def fit(self, df, param = None):
-        model_cat = self.model(param)
+        if param is not None:
+            model_cat = self.model(**param)
+        else:
+            model_cat = self.model()
 
         model_df = self.data_prep(df)
         X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
@@ -76,7 +79,7 @@ class cat_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
 
         def objective(params):
-            model =self.model(params)
+            model =self.model(**params)
 
             
             metric = []
@@ -137,7 +140,12 @@ class lightGBM_forecaster:
         return dfc
     
     def fit(self, df, param = None):
-        model_lgb =self.model(param)
+
+        if param is not None:
+            model_lgb = self.model(**param)
+        else:
+            model_lgb = self.model()
+
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         self.model_lgb = model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var, verbose = True)
@@ -183,7 +191,7 @@ class lightGBM_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(params)
+            model =self.model(**params)
 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -252,8 +260,10 @@ class xgboost_forecaster:
         return dfc
 
     def fit(self, df, param = None):
-        model_xgb =self.model(param)
-
+        if param is not None:
+            model_xgb =self.model(**param)
+        else:
+            model_xgb =self.model()
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         self.model_xgb = model_xgb.fit(self.X, self.y, verbose = True)
@@ -299,7 +309,7 @@ class xgboost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(params)   
+            model =self.model(**params)   
                 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -366,7 +376,10 @@ class RandomForest_forecaster:
         return dfc
 
     def fit(self, df, param = None):
-        model_rf =self.model(param)
+        if param is not None:
+            model_rf =self.model(**param)
+        else:
+            model_rf =self.model()
 
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
@@ -413,7 +426,7 @@ class RandomForest_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(params)   
+            model =self.model(**params)   
                 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -479,7 +492,10 @@ class AdaBoost_forecaster:
         return dfc
 
     def fit(self, df, param = None):
-        model_ada = self.model(param)
+        if param is not None:
+            model_ada = self.model(**param)
+        else:
+            model_ada = self.model()
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         self.model_ada = model_ada.fit(self.X, self.y)
@@ -525,7 +541,7 @@ class AdaBoost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(params)   
+            model =self.model(**params)   
                 
             metric = []
             for train_index, test_index in tscv.split(df):
