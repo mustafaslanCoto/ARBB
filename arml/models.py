@@ -12,9 +12,10 @@ from hyperopt.pyll import scope
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
 class cat_forecaster:
-    def __init__(self, target_col, n_lag = None, lag_transform = None, cat_variables = None):
+    def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
+        self.model = model
         self.target_col = target_col
         self.cat_var = cat_variables
         self.n_lag = n_lag
@@ -37,16 +38,13 @@ class cat_forecaster:
         return dfc
     
     def fit(self, df, param = None):
-        if param is not None:
-            model_cat = cat.CatBoostRegressor(**param)
-        else:
-            model_cat = cat.CatBoostRegressor()
+        model_cat = self.model(param)
+
         model_df = self.data_prep(df)
         X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        model_cat.fit(X, self.y, cat_features=self.cat_var, verbose = True)
-        return model_cat
+        self.model_cat = model_cat.fit(X, self.y, cat_features=self.cat_var, verbose = True)
     
-    def forecast(self, model, n_ahead, x_test = None):
+    def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
         predictions = []
         for i in range(n_ahead):
@@ -68,7 +66,7 @@ class cat_forecaster:
             else:
                 transform_lag = []
             inp = x_var + inp_lag+transform_lag
-            pred = model.predict(inp)
+            pred = self.model_cat.predict(inp)
             predictions.append(pred)
             lags.append(pred)
         return np.array(predictions)
@@ -78,7 +76,7 @@ class cat_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
 
         def objective(params):
-            model =cat.CatBoostRegressor(**params)
+            model =self.model(params)
 
             
             metric = []
@@ -87,9 +85,9 @@ class cat_forecaster:
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
                 model_train = self.data_prep(train)
                 X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                model.fit(X, self.y, cat_features=self.cat_var,
+                self.model_cat = model.fit(X, self.y, cat_features=self.cat_var,
                             verbose = False)
-                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
@@ -111,9 +109,10 @@ class cat_forecaster:
     
 import lightgbm as lgb
 class lightGBM_forecaster:
-    def __init__(self, target_col, n_lag = None, lag_transform = None, cat_variables = None):
+    def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
+        self.model = model
         self.target_col = target_col
         self.cat_var = cat_variables
         self.n_lag = n_lag
@@ -138,16 +137,12 @@ class lightGBM_forecaster:
         return dfc
     
     def fit(self, df, param = None):
-        if param is not None:
-            model_lgb =lgb.LGBMRegressor(**param)
-        else:
-            model_lgb =lgb.LGBMRegressor()
+        model_lgb =self.model(param)
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var, verbose = True)
-        return model_lgb
+        self.model_lgb = model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var, verbose = True)
     
-    def forecast(self, model, n_ahead, x_test = None):
+    def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
         predictions = []
         for i in range(n_ahead):
@@ -179,7 +174,7 @@ class lightGBM_forecaster:
                         df_inp[i] = df_inp[i].astype('float64')
                 else:
                     df_inp[i] = df_inp[i].astype('float64')
-            pred = model.predict(df_inp)[0]
+            pred = self.model_lgb.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
         return np.array(predictions)
@@ -188,7 +183,7 @@ class lightGBM_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =lgb.LGBMRegressor(**params)
+            model =self.model(params)
 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -196,9 +191,9 @@ class lightGBM_forecaster:
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
                 model_train = self.data_prep(train)
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                model.fit(self.X, self.y, categorical_feature=self.cat_var,
+                self.model_lgb = model.fit(self.X, self.y, categorical_feature=self.cat_var,
                             verbose = False)
-                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
@@ -222,9 +217,10 @@ class lightGBM_forecaster:
 
 import xgboost as xgb
 class xgboost_forecaster:
-    def __init__(self, target_col, n_lag = None, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
+        self.model = model
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
@@ -256,16 +252,13 @@ class xgboost_forecaster:
         return dfc
 
     def fit(self, df, param = None):
-        if param is not None:
-            model_xgb =xgb.XGBRegressor(**param)
-        else:
-            model_xgb =xgb.XGBRegressor()
+        model_xgb =self.model(param)
+
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        model_xgb.fit(self.X, self.y, verbose = True)
-        return model_xgb
+        self.model_xgb = model_xgb.fit(self.X, self.y, verbose = True)
 
-    def forecast(self, model, n_ahead, x_test = None):
+    def forecast(self, n_ahead, x_test = None):
         x_dummy = self.data_prep(x_test)
 #         max_lag = self.n_lag[-1]
 #         lags = self.y[-max_lag:].tolist()
@@ -295,7 +288,7 @@ class xgboost_forecaster:
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
 
-            pred = model.predict(df_inp)[0]
+            pred = self.model_xgb.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
 #             lags = lags[-max_lag:]
@@ -306,7 +299,7 @@ class xgboost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =xgb.XGBRegressor(**params)   
+            model =self.model(params)   
                 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -314,8 +307,8 @@ class xgboost_forecaster:
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
                 model_train = self.data_prep(train)
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                model.fit(self.X, self.y, verbose = True)
-                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                self.model_xgb = model.fit(self.X, self.y, verbose = True)
+                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
@@ -338,9 +331,10 @@ class xgboost_forecaster:
     
 from sklearn.ensemble import AdaBoostRegressor, RandomForestRegressor
 class RandomForest_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, model, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
+        self.model = model
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
@@ -372,16 +366,13 @@ class RandomForest_forecaster:
         return dfc
 
     def fit(self, df, param = None):
-        if param is not None:
-            model_rf =RandomForestRegressor(**param)
-        else:
-            model_rf =RandomForestRegressor()
+        model_rf =self.model(param)
+
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        model_rf.fit(self.X, self.y)
-        return model_rf
+        self.model_rf = model_rf.fit(self.X, self.y)
 
-    def forecast(self, model, n_ahead, x_test = None):
+    def forecast(self, n_ahead, x_test = None):
         x_dummy = self.data_prep(x_test)
 #         max_lag = self.n_lag[-1]
 #         lags = self.y[-max_lag:].tolist()
@@ -411,7 +402,7 @@ class RandomForest_forecaster:
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
 
-            pred = model.predict(df_inp)[0]
+            pred = self.model_rf.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
 #             lags = lags[-max_lag:]
@@ -422,7 +413,7 @@ class RandomForest_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =RandomForestRegressor(**params)   
+            model =self.model(params)   
                 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -430,8 +421,8 @@ class RandomForest_forecaster:
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
                 model_train = self.data_prep(train)
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                model.fit(self.X, self.y)
-                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                self.model_rf = model.fit(self.X, self.y)
+                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
@@ -453,9 +444,10 @@ class RandomForest_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class AdaBoost_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, model, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
+        self.model = model
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
@@ -487,16 +479,12 @@ class AdaBoost_forecaster:
         return dfc
 
     def fit(self, df, param = None):
-        if param is not None:
-            model_ada =AdaBoostRegressor(**param)
-        else:
-            model_ada =AdaBoostRegressor()
+        model_ada = self.model(param)
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        model_ada.fit(self.X, self.y)
-        return model_ada
+        self.model_ada = model_ada.fit(self.X, self.y)
 
-    def forecast(self, model, n_ahead, x_test = None):
+    def forecast(self, n_ahead, x_test = None):
         x_dummy = self.data_prep(x_test)
 #         max_lag = self.n_lag[-1]
 #         lags = self.y[-max_lag:].tolist()
@@ -526,7 +514,7 @@ class AdaBoost_forecaster:
             df_inp = pd.DataFrame(inp).T
             df_inp.columns = self.X.columns
 
-            pred = model.predict(df_inp)[0]
+            pred = self.model_ada.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
 #             lags = lags[-max_lag:]
@@ -537,7 +525,7 @@ class AdaBoost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =AdaBoostRegressor(**params)   
+            model =self.model(params)   
                 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -545,8 +533,8 @@ class AdaBoost_forecaster:
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
                 model_train = self.data_prep(train)
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                model.fit(self.X, self.y)
-                yhat = self.forecast(model, n_ahead =len(y_test), x_test=x_test)
+                self.model_ada = model.fit(self.X, self.y)
+                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 accuracy = eval_metric(y_test, yhat)*100
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
