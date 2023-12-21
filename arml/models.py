@@ -3,13 +3,9 @@ import numpy as np
 
 
 ## Catboost
-from window_ops.rolling import rolling_mean, rolling_max, rolling_min, rolling_std
-import catboost as cat
 from sklearn.model_selection import TimeSeriesSplit
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from hyperopt.pyll import scope
-
-from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
 class cat_forecaster:
     def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_variables = None):
@@ -109,8 +105,7 @@ class cat_forecaster:
                         trials = trials)
         # best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
         return space_eval(param_space, best_hyperparams)
-    
-import lightgbm as lgb
+
 class lightGBM_forecaster:
     def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
@@ -222,8 +217,6 @@ class lightGBM_forecaster:
         return space_eval(param_space, best_hyperparams)
             
     
-
-import xgboost as xgb
 class xgboost_forecaster:
     def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
@@ -339,7 +332,6 @@ class xgboost_forecaster:
         #                    else best_hyperparams[i] for i in best_hyperparams}
         return space_eval(param_space, best_hyperparams)
     
-from sklearn.ensemble import AdaBoostRegressor, RandomForestRegressor
 class RandomForest_forecaster:
     def __init__(self, model, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
