@@ -33,13 +33,13 @@ class ts_conformalizer():
 #             y_pred = mod_arima.forecast(self.H, exog = test_x)
             
             if self.param is not None:
-                mod_fit = self.model.fit(x_back, param=self.param)
+                self.model.fit(x_back, param=self.param)
             else:
-                mod_fit = self.model.fit(x_back)
+                self.model.fit(x_back)
             if test_x is not None:
-                forecast = self.model.forecast(mod_fit, self.H, test_x)
+                forecast = self.model.forecast(self.H, test_x)
             else:
-                forecast = self.model.forecast(mod_fit, self.H)
+                forecast = self.model.forecast(self.H)
             
             test_y = np.array(test_y)
             predictions.append(forecast)
@@ -78,9 +78,9 @@ class ts_conformalizer():
             for i in range(self.H):
                 scores_i = scores_calib[i]
                 if self.calib_metric == "smape":
-                    middle_qhat = self.calculate_qunatile(scores_i[:, 0])[d]
+                    q_hat = self.calculate_qunatile(scores_i[:, 0])[d]
                 elif self.calib_metric == "mape":
-                    middle_qhat = self.calculate_qunatile(scores_i[:, 1])[d]
+                    q_hat = self.calculate_qunatile(scores_i[:, 1])[d]
                 elif self.calib_metric == "mae":
                     q_hat = self.calculate_qunatile(scores_i[:, 2])[d]
                 else:
@@ -90,14 +90,14 @@ class ts_conformalizer():
             
     def forecast(self, X=None):
         if self.param is not None:
-            model = self.model.fit(self.train_df, param=self.param)
+            self.model.fit(self.train_df, param=self.param)
         else:
-            model = self.model.fit(self.train_df)
+            self.model.fit(self.train_df)
             
         if X is not None:
-            y_pred = self.model.forecast(model, n_ahead = self.H, x_test= X)
+            y_pred = self.model.forecast(n_ahead = self.H, x_test= X)
         else:
-            y_pred = self.model.forecast(model, n_ahead = self.H)
+            y_pred = self.model.forecast(n_ahead = self.H)
             
         result = []
         result.append(y_pred)
