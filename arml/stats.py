@@ -29,6 +29,27 @@ def plot_PACF_ACF(series, lag_num, figsize = (15, 8)):
     ax[1].grid(which='both')
     pyplot.show()
 
+def fourier_terms(start, stop, period, num_terms, df_index):
+    '''
+    Returns fourier terms for the given seasonal period and dataframe.
+
+            Parameters:
+                    start (int): An integer that should be 0 for the training dataset, whereas for the test dataset, 
+                    it should correspond to the length of the training data.
+                    stop (int): An integer representing the length of the training dataset is required for the training dataset,
+                    while for the testing dataset, it should be the sum of the lengths of both the training and test datasets.
+                    period (int): the seosanal period.
+                    num_terms (int): It specifies how many pairs of sin and cos terms to include.
+                    df_index: a dataframe (training or test dataset). It specify whether to use the indexes of the training or 
+                    test dataset for the returned dataframe
+    '''
+    t = np.arange(start, stop)
+    df = pd.DataFrame(index=df_index.index)
+    for i in range(1, num_terms + 1):
+        df["sin_"+str(i-1)+"_"+str(period)] = np.sin(2 * np.pi * i * t / period)
+        df["cos_"+str(i-1)+"_"+str(period)] = np.cos(2 * np.pi * i * t / period)
+    return df
+
 def rmse(y_true, y_pred):
     """
     Calculate Root Mean Square Error (RMSE).
