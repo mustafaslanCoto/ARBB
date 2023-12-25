@@ -48,7 +48,7 @@ class ts_conformalizer():
         return np.row_stack(actuals), np.row_stack(predictions)
     
     def calculate_qunatile(self, scores_calib):
-        # Calculate the quantile value based on delta and non-conformity scores
+        # Calculate the quantile values for each delta and non-conformity scores
         delta_q = []
         for i in self.delta:
             which_quantile = np.ceil((i)*(self.n_calib+1))/self.n_calib
@@ -61,7 +61,8 @@ class ts_conformalizer():
         acts, preds = self.backtest()
         horizon_scores = []
         for i in range(self.H):
-            mae =np.abs(acts[:,i] - preds[:,i])
+            # calculating metrics horizon i
+            mae =np.abs(acts[:,i] - preds[:,i]) 
             smape = 2*mae/(np.abs(acts[:,i])+np.abs(preds[:,i]))
             mape = mae/acts[:,i]
             metrics = np.stack((smape,  mape, mae), axis=1)
