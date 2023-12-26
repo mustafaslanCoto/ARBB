@@ -50,6 +50,22 @@ def fourier_terms(start, stop, period, num_terms, df_index):
         df["cos_"+str(i-1)+"_"+str(period)] = np.cos(2 * np.pi * i * t / period)
     return df
 
+
+def Kfold_target(train, test, cat_var, target_col, encoded_colname, split_num):
+    from sklearn.model_selection import KFold
+    kf = KFold(n_splits = split_num, shuffle = True)
+    train[encoded_colname] = np.nan
+    for tr_ind, val_ind in kf.split(train):
+        X_tr, X_val = train.iloc[tr_ind], train.iloc[val_ind]
+        cal_df = X_tr.groupby(cat_var)[target_col].mean().reset_index()
+        train.loc[train.index[val_ind], encoded_colname] = X_val[cat_var].merge(cal_df, on = cat_var, how = "left")[target_col].values
+        
+    train.loc[train[encoded_colname].isnull(), encoded_colname] = train[train[encoded_colname].isnull()][encoded_colname].mean()
+    map_df = train.groupby(cat_var)[encoded_colname].mean().reset_index()
+    test[encoded_colname] = test[cat_var].merge(map_df, on = cat_var, how= "left")[encoded_colname].values
+    test.loc[test[encoded_colname].isnull(), encoded_colname] = map_df[encoded_colname].mean()
+    return train, test
+
 def rmse(y_true, y_pred):
     """
     Calculate Root Mean Square Error (RMSE).
