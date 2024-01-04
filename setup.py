@@ -1,12 +1,12 @@
 from setuptools import setup, find_packages
 
 VERSION = '0.0.1' 
-DESCRIPTION = 'Auto regressive machine Learning package'
+DESCRIPTION = 'Auto regressive bagging and boosting package'
 LONG_DESCRIPTION = 'Forecating using historical data as predictors'
 
 # Setting up
 setup(
-        name="ARML", 
+        name="ARBB", 
         version=VERSION,
         author="Mustafa Aslan",
         author_email="<mustafaslan63@email.com>",
