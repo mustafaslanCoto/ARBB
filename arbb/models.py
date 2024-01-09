@@ -146,7 +146,7 @@ class lightGBM_forecaster:
 
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        self.model_lgb = model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var, verbose = True)
+        self.model_lgb = model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var)
     
     def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
@@ -197,8 +197,7 @@ class lightGBM_forecaster:
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
                 model_train = self.data_prep(train)
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                self.model_lgb = model.fit(self.X, self.y, categorical_feature=self.cat_var,
-                            verbose = False)
+                self.model_lgb = model.fit(self.X, self.y, categorical_feature=self.cat_var)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
