@@ -87,7 +87,10 @@ class cat_forecaster:
                 self.model_cat = model.fit(X, self.y, cat_features=self.cat_var,
                             verbose = False)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                accuracy = eval_metric(y_test, yhat)
+                if eval_metric.__name__== 'mean_squared_error':
+                    accuracy = eval_metric(y_test, yhat, squared=False)
+                else:
+                    accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
             score = np.mean(metric)
@@ -197,7 +200,10 @@ class lightGBM_forecaster:
                 self.model_lgb = model.fit(self.X, self.y, categorical_feature=self.cat_var,
                             verbose = False)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                accuracy = eval_metric(y_test, yhat)
+                if eval_metric.__name__== 'mean_squared_error':
+                    accuracy = eval_metric(y_test, yhat, squared=False)
+                else:
+                    accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
             score = np.mean(metric)
@@ -312,7 +318,10 @@ class xgboost_forecaster:
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
                 self.model_xgb = model.fit(self.X, self.y, verbose = True)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                accuracy = eval_metric(y_test, yhat)
+                if eval_metric.__name__== 'mean_squared_error':
+                    accuracy = eval_metric(y_test, yhat, squared=False)
+                else:
+                    accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
             score = np.mean(metric)
@@ -428,7 +437,10 @@ class RandomForest_forecaster:
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
                 self.model_rf = model.fit(self.X, self.y)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                accuracy = eval_metric(y_test, yhat)
+                if eval_metric.__name__== 'mean_squared_error':
+                    accuracy = eval_metric(y_test, yhat, squared=False)
+                else:
+                    accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
             score = np.mean(metric)
@@ -543,7 +555,10 @@ class AdaBoost_forecaster:
                 self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
                 self.model_ada = model.fit(self.X, self.y)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                accuracy = eval_metric(y_test, yhat)*100
+                if eval_metric.__name__== 'mean_squared_error':
+                    accuracy = eval_metric(y_test, yhat, squared=False)
+                else:
+                    accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
                 metric.append(accuracy)
             score = np.mean(metric)
