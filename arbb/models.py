@@ -140,9 +140,9 @@ class lightGBM_forecaster:
     def fit(self, df, param = None):
 
         if param is not None:
-            model_lgb = self.model(**param, verbose=0)
+            model_lgb = self.model(**param, verbose=-1)
         else:
-            model_lgb = self.model(verbose=0)
+            model_lgb = self.model(verbose=-1)
 
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
@@ -189,7 +189,7 @@ class lightGBM_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(**params, verbose=0)
+            model =self.model(**params, verbose=-1)
 
             metric = []
             for train_index, test_index in tscv.split(df):
