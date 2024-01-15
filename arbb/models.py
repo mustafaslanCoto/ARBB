@@ -8,17 +8,22 @@ from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from hyperopt.pyll import scope
 
 class cat_forecaster:
-    def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_variables = None):
+    def __init__(self, model, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = model
         self.target_col = target_col
         self.cat_var = cat_variables
         self.n_lag = n_lag
+        self.difference = differencing_number
         self.lag_transform = lag_transform
         
     def data_prep(self, df):
         dfc = df.copy()
+        if self.difference is not None:
+            self.last_train = df[self.target_col][-1]
+            for i in range(1, self.difference+1):
+                dfc[self.target_col] = dfc[self.target_col].diff(1)
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('str')
@@ -68,7 +73,13 @@ class cat_forecaster:
             pred = self.model_cat.predict(inp)
             predictions.append(pred)
             lags.append(pred)
-        return np.array(predictions)
+
+        if self.difference is not None:
+            predictions.insert(0, self.last_train)
+            forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+        return forecasts
     
 
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num = 100):
@@ -110,17 +121,22 @@ class cat_forecaster:
         return space_eval(param_space, best_hyperparams)
 
 class lightGBM_forecaster:
-    def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_variables = None):
+    def __init__(self, model, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = model
         self.target_col = target_col
         self.cat_var = cat_variables
         self.n_lag = n_lag
+        self.difference = differencing_number
         self.lag_transform = lag_transform
         
     def data_prep(self, df):
         dfc = df.copy()
+        if self.difference is not None:
+            self.last_train = df[self.target_col][-1]
+            for i in range(1, self.difference+1):
+                dfc[self.target_col] = dfc[self.target_col].diff(1)
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('category')
@@ -183,7 +199,12 @@ class lightGBM_forecaster:
             pred = self.model_lgb.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
-        return np.array(predictions)
+        if self.difference is not None:
+            predictions.insert(0, self.last_train)
+            forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+        return forecasts
     
     def tune_model(self, df, cv_split, test_size, param_space,eval_metric, eval_num = 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
@@ -223,13 +244,14 @@ class lightGBM_forecaster:
             
     
 class xgboost_forecaster:
-    def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, model, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = model
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
+        self.difference = differencing_number
         self.lag_transform = lag_transform
         self.drop_categ = drop_categ
     
@@ -246,6 +268,10 @@ class xgboost_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if self.target_col in dfc.columns:
+            if self.difference is not None:
+                self.last_train = df[self.target_col][-1]
+                for i in range(1, self.difference+1):
+                    dfc[self.target_col] = dfc[self.target_col].diff(1)
             if self.n_lag is not None:
                 for i in self.n_lag:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
@@ -299,8 +325,13 @@ class xgboost_forecaster:
             pred = self.model_xgb.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
-#             lags = lags[-max_lag:]
-        return np.array(predictions)
+
+        if self.difference is not None:
+            predictions.insert(0, self.last_train)
+            forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+        return forecasts
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
@@ -341,13 +372,14 @@ class xgboost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class RandomForest_forecaster:
-    def __init__(self, model, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, model, target_col, n_lag, lag_transform = None, differencing_number = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = model
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
+        self.difference = differencing_number
         self.lag_transform = lag_transform
         self.drop_categ = drop_categ
         
@@ -363,7 +395,14 @@ class RandomForest_forecaster:
         if self.drop_categ is not None:
             for i in self.drop_categ:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+
         if self.target_col in dfc.columns:
+
+            if self.difference is not None:
+                self.last_train = df[self.target_col][-1]
+                for i in range(1, self.difference+1):
+                    dfc[self.target_col] = dfc[self.target_col].diff(1)
+
             if self.n_lag is not None:
                 for i in self.n_lag:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
@@ -418,8 +457,13 @@ class RandomForest_forecaster:
             pred = self.model_rf.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
-#             lags = lags[-max_lag:]
-        return np.array(predictions)
+
+        if self.difference is not None:
+            predictions.insert(0, self.last_train)
+            forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+        return forecasts
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
@@ -460,13 +504,14 @@ class RandomForest_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class AdaBoost_forecaster:
-    def __init__(self, model, target_col, n_lag, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, model, target_col, n_lag, lag_transform = None, differencing_number = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = model
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
+        self.difference = differencing_number
         self.lag_transform = lag_transform
         self.drop_categ = drop_categ
         
@@ -482,7 +527,14 @@ class AdaBoost_forecaster:
         if self.drop_categ is not None:
             for i in self.drop_categ:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+
         if self.target_col in dfc.columns:
+
+            if self.difference is not None:
+                self.last_train = df[self.target_col][-1]
+                for i in range(1, self.difference+1):
+                    dfc[self.target_col] = dfc[self.target_col].diff(1)
+
             if self.n_lag is not None:
                 for i in self.n_lag:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
@@ -537,7 +589,12 @@ class AdaBoost_forecaster:
             predictions.append(pred)
             lags.append(pred)
 #             lags = lags[-max_lag:]
-        return np.array(predictions)
+        if self.difference is not None:
+            predictions.insert(0, self.last_train)
+            forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+        return forecasts
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
@@ -578,13 +635,14 @@ class AdaBoost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class Cubist_forecaster:
-    def __init__(self, model, target_col, n_lag = None, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, model, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_dict = None, drop_categ = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = model
         self.target_col = target_col
         self.cat_var = cat_dict
         self.n_lag = n_lag
+        self.difference = differencing_number
         self.lag_transform = lag_transform
         self.drop_categ = drop_categ
     
@@ -601,6 +659,12 @@ class Cubist_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if self.target_col in dfc.columns:
+
+            if self.difference is not None:
+                self.last_train = df[self.target_col][-1]
+                for i in range(1, self.difference+1):
+                    dfc[self.target_col] = dfc[self.target_col].diff(1)
+                    
             if self.n_lag is not None:
                 for i in self.n_lag:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
@@ -653,8 +717,13 @@ class Cubist_forecaster:
             pred = self.model_cub.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
-#             lags = lags[-max_lag:]
-        return np.array(predictions)
+
+        if self.difference is not None:
+            predictions.insert(0, self.last_train)
+            forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+        return forecasts
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
