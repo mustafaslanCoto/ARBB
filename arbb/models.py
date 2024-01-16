@@ -21,7 +21,7 @@ class cat_forecaster:
     def data_prep(self, df):
         dfc = df.copy()
         if self.difference is not None:
-            self.last_train = df[self.target_col][-1]
+            self.last_train = df[self.target_col].tolist()[-1]
             for i in range(1, self.difference+1):
                 dfc[self.target_col] = dfc[self.target_col].diff(1)
         if self.cat_var is not None:
@@ -134,7 +134,7 @@ class lightGBM_forecaster:
     def data_prep(self, df):
         dfc = df.copy()
         if self.difference is not None:
-            self.last_train = df[self.target_col][-1]
+            self.last_train = df[self.target_col].tolist()[-1]
             for i in range(1, self.difference+1):
                 dfc[self.target_col] = dfc[self.target_col].diff(1)
         if self.cat_var is not None:
@@ -269,7 +269,7 @@ class xgboost_forecaster:
                 
         if self.target_col in dfc.columns:
             if self.difference is not None:
-                self.last_train = df[self.target_col][-1]
+                self.last_train = df[self.target_col].tolist()[-1]
                 for i in range(1, self.difference+1):
                     dfc[self.target_col] = dfc[self.target_col].diff(1)
             if self.n_lag is not None:
@@ -399,7 +399,7 @@ class RandomForest_forecaster:
         if self.target_col in dfc.columns:
 
             if self.difference is not None:
-                self.last_train = df[self.target_col][-1]
+                self.last_train = df[self.target_col].tolist()[-1]
                 for i in range(1, self.difference+1):
                     dfc[self.target_col] = dfc[self.target_col].diff(1)
 
@@ -531,7 +531,7 @@ class AdaBoost_forecaster:
         if self.target_col in dfc.columns:
 
             if self.difference is not None:
-                self.last_train = df[self.target_col][-1]
+                self.last_train = df[self.target_col].tolist()[-1]
                 for i in range(1, self.difference+1):
                     dfc[self.target_col] = dfc[self.target_col].diff(1)
 
@@ -661,7 +661,7 @@ class Cubist_forecaster:
         if self.target_col in dfc.columns:
 
             if self.difference is not None:
-                self.last_train = df[self.target_col][-1]
+                self.last_train = df[self.target_col].tolist()[-1]
                 for i in range(1, self.difference+1):
                     dfc[self.target_col] = dfc[self.target_col].diff(1)
                     
