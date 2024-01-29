@@ -1,1 +1,6 @@
-since they are slow run tbats and arima later
+def ndiffs(x, alpha = 0.05, max_lags = None, max_d = 2):
+    return final_d
+
+
+def nsdiffs(x, alpha = 0.05, m = None, max_D = 1):
+    return final_D

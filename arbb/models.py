@@ -760,4 +760,153 @@ class Cubist_forecaster:
                         max_evals = eval_num,
                         trials = trials)
         return space_eval(param_space, best_hyperparams)
+    
+class lightGBM_bidirect_forecaster:
+    def __init__(self, model, target_col, n_lag = None, differencing_number = None, lag_transform = None, predictor_lag = None,
+                 predictor_class = None, predictor_param = None, cat_variables = None):
+        if (n_lag == None) and (lag_transform == None):
+            raise ValueError('Expected either n_lag or lag_transform args')
+        self.model = model
+        self.target_col = target_col
+        self.cat_var = cat_variables
+        self.n_lag = n_lag
+        self.difference = differencing_number
+        self.lag_transform = lag_transform
+        self.predictor_lag = predictor_lag
+        self.predictor_class = predictor_class
+        self.predictor_param = predictor_param
+        
+    def data_prep(self, df):
+        dfc = df.copy()
+        self.raw_df = df.copy()
+        if self.difference is not None:
+            self.last_train = df[self.target_col].tolist()[-1]
+            for i in range(1, self.difference+1):
+                dfc[self.target_col] = dfc[self.target_col].diff(1)
+        if self.cat_var is not None:
+            for c in self.cat_var:
+                dfc[c] = dfc[c].astype('category')
+                
+        if self.n_lag is not None:
+            for i in self.n_lag:
+                dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+            
+        if self.lag_transform is not None:
+            df_array = np.array(dfc[self.target_col])
+            for i, j in self.lag_transform.items():
+                dfc[i.__name__+"_"+str(j)] = i(df_array, j)
+                
+        if  self.predictor_lag is not None:
+            for i, j in  self.predictor_lag.items():
+                for x in j:
+                    dfc[i+"_lag_"+str(x)] = dfc[i].shift(x)
+            
+        dfc = dfc.dropna()
+        return dfc
+    
+    def fit(self, df, param = None):
+
+        if param is not None:
+            model_lgb = self.model(**param, verbose=-1)
+        else:
+            model_lgb = self.model(verbose=-1)
+
+        model_df = self.data_prep(df)
+        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        self.model_lgb = model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var)
+    
+    def forecast(self, n_ahead, x_test = None):
+        lags = self.y.tolist()
+        predictions = []
+
+        data_ex = self.raw_df.drop(columns = self.target_col)
+        Yex = data_ex[self.predictor_class.target_col]
+        hist_exo = Yex.tolist()
+        self.predictor_class.fit(data_ex, self.predictor_param)
+        exo_forecasts = self.predictor_class.forecast(n_ahead, x_test)
+        
+        for i in range(n_ahead):
+            if x_test is not None:
+                x_var = x_test.iloc[i, 0:].tolist()
+                current_exo = exo_forecasts[i]
+                hist_exo.append(current_exo)
+                x_var.insert(0, current_exo)         
+            else:
+                x_var = []
+            if self.n_lag is not None:
+                inp_lag = [lags[-i] for i in self.n_lag]
+            else:
+                inp_lag = []
+                
+            lag_array = np.array(lags) # array is needed for transformation fuctions
+            if self.lag_transform is not None:
+                transform_lag = []
+                for method, lag in self.lag_transform.items():
+                    tl = method(lag_array, lag)[-1]
+                    transform_lag.append(tl)
+            else:
+                transform_lag = []
+
+            if self.predictor_class is not None:
+                pred_lags = list(self.predictor_lag.values())[0]
+                exo_lags = [hist_exo[-i-1] for i in pred_lags]
+            else:
+                exo_lags = []
+                
+            inp = x_var + inp_lag+transform_lag+exo_lags
+            df_inp = pd.DataFrame(inp).T
+            df_inp.columns = self.X.columns
+            for i in df_inp.columns:
+                if self.cat_var is not None:
+                    if i in self.cat_var:
+                        df_inp[i] = df_inp[i].astype('category')
+                    else:
+                        df_inp[i] = df_inp[i].astype('float64')
+                else:
+                    df_inp[i] = df_inp[i].astype('float64')
+            pred = self.model_lgb.predict(df_inp)[0]
+            predictions.append(pred)
+            lags.append(pred)
+        if self.difference is not None:
+            predictions.insert(0, self.last_train)
+            forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+        return forecasts
+    
+    def tune_model(self, df, cv_split, test_size, param_space,eval_metric, eval_num = 100):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        def objective(params):
+            model =self.model(**params, verbose=-1)
+
+            metric = []
+            for train_index, test_index in tscv.split(df):
+                train, test = df.iloc[train_index], df.iloc[test_index]
+                x_test, y_test = test.drop(columns = [self.target_col, self.predictor_class.target_col]), np.array(test[self.target_col])
+                model_train = self.data_prep(train)
+                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                self.model_lgb = model.fit(self.X, self.y, categorical_feature=self.cat_var)
+                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
+                if eval_metric.__name__== 'mean_squared_error':
+                    accuracy = eval_metric(y_test, yhat, squared=False)
+                else:
+                    accuracy = eval_metric(y_test, yhat)
+#                 print(str(accuracy)+" and len is "+str(len(test)))
+                metric.append(accuracy)
+            score = np.mean(metric)
+
+            print ("SCORE:", score)
+            return {'loss':score, 'status':STATUS_OK}
+            
+        trials = Trials()
+
+        best_hyperparams = fmin(fn = objective,
+                        space = param_space,
+                        algo = tpe.suggest,
+                        max_evals = eval_num,
+                        trials = trials)
+        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
+        #                    else best_hyperparams[i] for i in best_hyperparams}
+        return space_eval(param_space, best_hyperparams)
             
