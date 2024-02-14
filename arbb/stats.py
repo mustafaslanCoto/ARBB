@@ -34,14 +34,11 @@ def fourier_terms(start, stop, period, num_terms, df_index):
     Returns fourier terms for the given seasonal period and dataframe.
 
             Parameters:
-                    start (int): An integer that should be 0 for the training dataset, whereas for the test dataset, 
-                    it should correspond to the length of the training data.
-                    stop (int): An integer representing the length of the training dataset is required for the training dataset,
-                    while for the testing dataset, it should be the sum of the lengths of both the training and test datasets.
+                    start (int): An integer that should be 0 for the training dataset, whereas for the test dataset, it should correspond to the length of the training data.
+                    stop (int): An integer representing the length of the training dataset is required for the training dataset, while for the testing dataset, it should be the sum of the lengths of both the training and test datasets.
                     period (int): the seosanal period.
                     num_terms (int): It specifies how many pairs of sin and cos terms to include.
-                    df_index: a dataframe (training or test dataset). It specify whether to use the indexes of the training or 
-                    test dataset for the returned dataframe
+                    df_index: a dataframe (training or test dataset). It specify whether to use the indexes of the training or test dataset for the returned dataframe
     '''
     t = np.arange(start, stop)
     df = pd.DataFrame(index=df_index.index)
@@ -94,3 +91,95 @@ def rmse(y_true, y_pred):
 
 def smape(y_true, y_pred):
     return 1/len(y_true) * np.sum(2 * np.abs(y_pred-y_true) / (np.abs(y_true) + np.abs(y_pred))*100)
+
+
+def tune_es(data, param_space, cv_splits, horizon, eval_metric, eval_num):
+    tscv = TimeSeriesSplit(n_splits=cv_splits, test_size=horizon)
+    
+    def objective(params):
+        if (params["trend"] != None) & (params["seasonal"] != None):
+            alpha = params['smoothing_level']
+            beta = params['smoothing_trend']
+            gamma = params['smoothing_seasonal']
+            trend_type = params['trend']
+            season_type = params['seasonal']
+            S = params['seasonal_periods']
+            if params["damped_trend"] == True:
+                damped_bool = params["damped_trend"]
+                damp_trend = params['damping_trend']
+            else:
+                damped_bool = params["damped_trend"]
+                damp_trend = None
+    
+        elif (params["trend"] != None) & (params["seasonal"] == None):
+            alpha = params['smoothing_level']
+            beta = params['smoothing_trend']
+            gamma = None
+            trend_type = params['trend']
+            season_type = params['seasonal']
+            S=None
+            if params["damped_trend"] == True:
+                damped_bool = params["damped_trend"]
+                damp_trend = params['damping_trend']
+            else:
+                damped_bool = params["damped_trend"]
+                damp_trend = None
+                
+        elif (params["trend"] == None) & (params["seasonal"] != None):
+            alpha = params['smoothing_level']
+            beta = None
+            gamma = params['smoothing_seasonal']
+            trend_type = params['trend']
+            season_type = params['seasonal']
+            S=params['seasonal_periods']
+            if params["damped_trend"] == True:
+                damped_bool = False
+                damp_trend = None
+            else:
+                damped_bool = params["damped_trend"]
+                damp_trend = None
+                
+        else:
+            alpha = params['smoothing_level']
+            beta = None
+            gamma = None
+            trend_type = params['trend']
+            season_type = params['seasonal']
+            S=None
+            if params["damped_trend"] == True:
+                damped_bool = False
+                damp_trend = None
+            else:
+                damped_bool = params["damped_trend"]
+                damp_trend = None
+            
+    
+    
+        metric = []
+        for train_index, test_index in tscv.split(data):
+            train, test = data[train_index], data[test_index]
+    
+            hw_fit = ExponentialSmoothing(train ,seasonal_periods=S , seasonal=season_type, trend=trend_type, damped_trend = damped_bool).fit(smoothing_level = alpha, 
+                                                                                                                      smoothing_trend = beta,
+                                                                                                                      smoothing_seasonal = gamma,
+                                                                                                damping_trend=damp_trend)
+            
+            hw_forecast = hw_fit.forecast(len(test))
+            forecast_filled = np.nan_to_num(hw_forecast, nan=0)
+            accuracy = eval_metric(test, forecast_filled)
+            metric.append(accuracy)
+        score = np.mean(metric)
+    
+        print ("SCORE:", score)
+        return {'loss':score, 'status':STATUS_OK}
+    
+    
+    trials = Trials()
+    
+    best_hyperparams = fmin(fn = objective,
+                    space = param_space,
+                    algo = tpe.suggest,
+                    max_evals = eval_num,
+                    trials = trials)
+
+    return space_eval(param_space, best_hyperparams)
