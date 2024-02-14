@@ -93,7 +93,7 @@ def smape(y_true, y_pred):
     return 1/len(y_true) * np.sum(2 * np.abs(y_pred-y_true) / (np.abs(y_true) + np.abs(y_pred))*100)
 
 
-def tune_es(data, param_space, cv_splits, horizon, eval_metric, eval_num):
+def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
     tscv = TimeSeriesSplit(n_splits=cv_splits, test_size=horizon)
     
     def objective(params):
