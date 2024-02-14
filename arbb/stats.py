@@ -94,6 +94,10 @@ def smape(y_true, y_pred):
 
 
 def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
+    from sklearn.model_selection import TimeSeriesSplit
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
+    from hyperopt.pyll import scope
     tscv = TimeSeriesSplit(n_splits=cv_splits, test_size=horizon)
     
     def objective(params):
