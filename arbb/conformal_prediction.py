@@ -235,6 +235,7 @@ class s_arima_conformalizer():
             CPs.rename(columns = {i+1:"lower_"+str(round(self.delta[d_index]*100)), i+2:"upper_"+str(round(self.delta[d_index]*100))}, inplace = True)
         return CPs
     
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 class ets_conformalizer():
     def __init__(self, train_data, delta, model_params, fit_params, n_windows, H, calib_metric = "mae"):
         self.delta = delta
@@ -248,7 +249,6 @@ class ets_conformalizer():
         self.model_fit = ExponentialSmoothing(self.train, **self.model_param).fit(**self.fit_param)
         self.calibrate()
     def backtest(self):
-        from statsmodels.tsa.holtwinters import ExponentialSmoothing
         #making H-step-ahead forecast n_windows times for each 1-step backward sliding window.
         # We can the think of n_windows as the size of calibration set for each H horizon 
         actuals = []
@@ -259,7 +259,7 @@ class ets_conformalizer():
                 y_test = self.train[-self.H-i:-i]
             else:
                 y_test = self.train[-self.H:]
-                
+
             model_ets = ExponentialSmoothing(y_train, **self.model_param)
             fit_ets = model_ets.fit(**self.fit_param)
     
