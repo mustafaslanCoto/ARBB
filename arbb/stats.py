@@ -185,5 +185,9 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
                     algo = tpe.suggest,
                     max_evals = eval_num,
                     trials = trials)
-
-    return space_eval(param_space, best_hyperparams)
+    best_params = space_eval(param_space, best_hyperparams)
+    model_params = {"trend": best_params["trend"], "seasonal_periods": best_params["seasonal_periods"], "seasonal": best_params["seasonal"], 
+                    "damped_trend": best_params["damped_trend"]}
+    fit_params = {"smoothing_level": best_params["smoothing_level"], "smoothing_trend": best_params["smoothing_trend"], "smoothing_seasonal": best_params["smoothing_seasonal"], 
+                  "damping_trend": best_params["damping_trend"]}
+    return model_params, fit_params
