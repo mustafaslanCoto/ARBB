@@ -234,3 +234,105 @@ class s_arima_conformalizer():
             d_index = round(i/2)
             CPs.rename(columns = {i+1:"lower_"+str(round(self.delta[d_index]*100)), i+2:"upper_"+str(round(self.delta[d_index]*100))}, inplace = True)
         return CPs
+    
+class ets_conformalizer():
+    def __init__(self, train_data, delta, model_params, fit_params, n_windows, H, calib_metric = "mae"):
+        self.delta = delta
+        self.train = train_data
+        self.n_windows = n_windows
+        self.n_calib = n_windows
+        self.H = H
+        self.model_param = model_params
+        self.fit_param = fit_params
+        self.calib_metric = calib_metric
+        self.model_fit = ExponentialSmoothing(self.train, **self.model_param).fit(**self.fit_param)
+        self.calibrate()
+    def backtest(self):
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+        #making H-step-ahead forecast n_windows times for each 1-step backward sliding window.
+        # We can the think of n_windows as the size of calibration set for each H horizon 
+        actuals = []
+        predictions = []
+        for i in range(self.n_windows):
+            y_train = self.train[:-self.H-i]
+            if i !=0:
+                y_test = self.train[-self.H-i:-i]
+            else:
+                y_test = self.train[-self.H:]
+                
+            model_ets = ExponentialSmoothing(y_train, **self.model_param)
+            fit_ets = model_ets.fit(**self.fit_param)
+    
+            y_pred = fit_ets.forecast(self.H)
+            
+            predictions.append(y_pred)
+            actuals.append(y_test)
+            print("model "+str(i+1)+" is completed")
+        return np.row_stack(actuals), np.row_stack(predictions)
+    
+    def calculate_qunatile(self, scores_calib):
+        # Calculate the quantile values for each delta value
+        delta_q = []
+        for i in self.delta:
+            which_quantile = np.ceil((i)*(self.n_calib+1))/self.n_calib
+            q_data = np.quantile(scores_calib, which_quantile, method = "lower")
+            delta_q.append(q_data)
+        self.delta_q = delta_q
+        return delta_q
+    
+    def non_conformity_func(self):
+        #Calculate non-conformity scores (mae, smape and mape for now) for each forecasted horizon
+        acts, preds = self.backtest()
+        horizon_scores = []
+        for i in range(self.H):
+            mae =np.abs(acts[:,i] - preds[:,i])
+            smape = 2*mae/(np.abs(acts[:,i])+np.abs(preds[:,i]))
+            mape = mae/acts[:,i]
+            metrics = np.stack((smape,  mape, mae), axis=1)
+            horizon_scores.append(metrics)
+        return horizon_scores
+    
+    
+    def calibrate(self):
+         # Calibrate the conformalizer to calculate q_hat for all given delta values
+        scores_calib = self.non_conformity_func()
+        self.q_hat_D = []
+        for d in range(len(self.delta)):
+            q_hat_H = []
+            for i in range(self.H):
+                scores_i = scores_calib[i]
+                if self.calib_metric == "smape":
+                    qhat = self.calculate_qunatile(scores_i[:, 0])[d]
+                elif self.calib_metric == "mape":
+                    qhat = self.calculate_qunatile(scores_i[:, 1])[d]
+                elif self.calib_metric == "mae":
+                    q_hat = self.calculate_qunatile(scores_i[:, 2])[d]
+                else:
+                    raise ValueError("not a valid metric")
+                q_hat_H.append(q_hat)
+            self.q_hat_D.append(q_hat_H)
+            
+    def forecast(self):
+        y_pred = self.model_fit.forecast(self.H)
+
+        result = []
+        result.append(y_pred)
+        #Calculate the prediction intervals given the calibration metric used for non-conformity score
+        for i in range(len(self.delta)):
+            if self.calib_metric == "mae":
+                y_lower, y_upper = y_pred - np.array(self.q_hat_D[i]).flatten(), y_pred + np.array(self.q_hat_D[i]).flatten()
+            elif self.calib_metric == "mape":
+                y_lower, y_upper = y_pred/(1+np.array(self.q_hat_D[i]).flatten()), y_pred/(1-np.array(self.q_hat_D[i]).flatten())
+            elif self.calib_metric == "smape":
+                y_lower = y_pred*(2-np.array(self.q_hat_D[i]).flatten())/(2+np.array(self.q_hat_D[i]).flatten())
+                y_upper = y_pred*(2+np.array(self.q_hat_D[i]).flatten())/(2-np.array(self.q_hat_D[i]).flatten())
+            else:
+                raise ValueError("not a valid metric")
+            result.append(y_lower)
+            result.append(y_upper)
+        CPs = pd.DataFrame(result).T
+        CPs.rename(columns = {0:"point_forecast"}, inplace = True)
+        for i in range(0, 2*len(self.delta), 2):
+            d_index = round(i/2)
+            CPs.rename(columns = {i+1:"lower_"+str(round(self.delta[d_index]*100)), i+2:"upper_"+str(round(self.delta[d_index]*100))}, inplace = True)
+        return CPs
