@@ -188,6 +188,17 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
     best_params = space_eval(param_space, best_hyperparams)
     model_params = {"trend": best_params["trend"], "seasonal_periods": best_params["seasonal_periods"], "seasonal": best_params["seasonal"], 
                     "damped_trend": best_params["damped_trend"]}
+
     fit_params = {"smoothing_level": best_params["smoothing_level"], "smoothing_trend": best_params["smoothing_trend"], "smoothing_seasonal": best_params["smoothing_seasonal"], 
                   "damping_trend": best_params["damping_trend"]}
+    if model_params["trend"]==None:
+        model_params.pop('trend')
+        model_params.pop('damped_trend')
+        fit_params.pop('damping_trend')
+        fit_params.pop('smoothing_trend')
+
+    if model_params["seasonal"]==None:
+        model_params.pop('seasonal')
+        model_params.pop('seasonal_periods')
+        fit_params.pop('smoothing_seasonal')
     return model_params, fit_params
