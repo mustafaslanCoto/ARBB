@@ -202,3 +202,29 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
         model_params.pop('seasonal_periods')
         fit_params.pop('smoothing_seasonal')
     return model_params, fit_params
+
+def tune_sarima(y, d, D, season,p_range, q_range, P_range, Q_range, X=None):
+    from statsmodels.tsa.statespace.sarimax import SARIMAX
+    from tqdm import tqdm_notebook
+    from itertools import product
+    if X is not None:
+        X = np.array(X, dtype = np.float64)
+    p = p_range
+    q = q_range # MA(q)
+    P = P_range # Seasonal autoregressive order.
+    Q = Q_range #Seasonal moving average order.
+    parameters = product(p, q, P, Q) # combinations of parameters(cartesian product)
+    parameters_list = list(parameters)
+    result = []
+    for param in tqdm_notebook(parameters_list):
+        try:
+            model = SARIMAX(endog=y, exog = X, order = (param[0], d, param[1]), seasonal_order= (param[2], D, param[3], season)).fit(disp = -1)
+        except:
+            continue
+                            
+        aic = model.aic
+        result.append([param, aic])
+    result_df = pd.DataFrame(result)
+    result_df.columns = ["(p, q)x(P, Q)", "AIC"] 
+    result_df = result_df.sort_values("AIC", ascending = True) #Sort in ascending order, lower AIC is better
+    return result_df
