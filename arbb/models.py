@@ -32,9 +32,10 @@ class cat_forecaster:
                 dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
             
         if self.lag_transform is not None:
-            df_array = np.array(dfc[self.target_col])
-            for i, j in self.lag_transform.items():
-                dfc[i.__name__+"_"+str(j)] = i(df_array, j) 
+            for n, k in self.lag_transform.items():
+                df_array = np.array(dfc[self.target_col].shift(n))
+                for i in k:
+                    dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
         return dfc
     
@@ -61,12 +62,13 @@ class cat_forecaster:
             else:
                 inp_lag = []
                 
-            lag_array = np.array(lags) # array is needed for transformation fuctions
             if self.lag_transform is not None:
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
+                transform_lag = []    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(pd.Series(lags).shift(n-1))
+                    for i in k:
+                        t1 = i[0](df_array, i[1])[-1]
+                        transform_lag.append(t1)
             else:
                 transform_lag = []
             inp = x_var + inp_lag+transform_lag
@@ -146,9 +148,10 @@ class lightGBM_forecaster:
                 dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
             
         if self.lag_transform is not None:
-            df_array = np.array(dfc[self.target_col])
-            for i, j in self.lag_transform.items():
-                dfc[i.__name__+"_"+str(j)] = i(df_array, j)   
+            for n, k in self.lag_transform.items():
+                df_array = np.array(dfc[self.target_col].shift(n))
+                for i in k:
+                    dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])    
             
         dfc = dfc.dropna()
         return dfc
@@ -177,12 +180,13 @@ class lightGBM_forecaster:
             else:
                 inp_lag = []
                 
-            lag_array = np.array(lags) # array is needed for transformation fuctions
             if self.lag_transform is not None:
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
+                transform_lag = []    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(pd.Series(lags).shift(n-1))
+                    for i in k:
+                        t1 = i[0](df_array, i[1])[-1]
+                        transform_lag.append(t1)
             else:
                 transform_lag = []
             inp = x_var + inp_lag+transform_lag
@@ -277,9 +281,10 @@ class xgboost_forecaster:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
                 
             if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(dfc[self.target_col].shift(n))
+                    for i in k:
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
         return dfc
 
@@ -308,12 +313,14 @@ class xgboost_forecaster:
                 inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
             else:
                 inp_lag = []
+
             if self.lag_transform is not None:
-                lag_array = np.array(lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
+                transform_lag = []    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(pd.Series(lags).shift(n-1))
+                    for i in k:
+                        t1 = i[0](df_array, i[1])[-1]
+                        transform_lag.append(t1)
             else:
                 transform_lag = []
                     
@@ -408,9 +415,10 @@ class RandomForest_forecaster:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
                 
             if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(dfc[self.target_col].shift(n))
+                    for i in k:
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])    
         dfc = dfc.dropna()
         return dfc
 
@@ -440,12 +448,14 @@ class RandomForest_forecaster:
                 inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
             else:
                 inp_lag = []
+
             if self.lag_transform is not None:
-                lag_array = np.array(lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
+                transform_lag = []    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(pd.Series(lags).shift(n-1))
+                    for i in k:
+                        t1 = i[0](df_array, i[1])[-1]
+                        transform_lag.append(t1)
             else:
                 transform_lag = []
                     
@@ -540,9 +550,10 @@ class AdaBoost_forecaster:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
                 
             if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(dfc[self.target_col].shift(n))
+                    for i in k:
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
         dfc = dfc.dropna()
         return dfc
 
@@ -571,12 +582,14 @@ class AdaBoost_forecaster:
                 inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
             else:
                 inp_lag = []
+
             if self.lag_transform is not None:
-                lag_array = np.array(lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
+                transform_lag = []    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(pd.Series(lags).shift(n-1))
+                    for i in k:
+                        t1 = i[0](df_array, i[1])[-1]
+                        transform_lag.append(t1)
             else:
                 transform_lag = []
                     
@@ -670,9 +683,10 @@ class Cubist_forecaster:
                     dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
                 
             if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(dfc[self.target_col].shift(n))
+                    for i in k:
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])    
         dfc = dfc.dropna()
         return dfc
 
@@ -701,11 +715,12 @@ class Cubist_forecaster:
             else:
                 inp_lag = []
             if self.lag_transform is not None:
-                lag_array = np.array(lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
+                transform_lag = []    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(pd.Series(lags).shift(n-1))
+                    for i in k:
+                        t1 = i[0](df_array, i[1])[-1]
+                        transform_lag.append(t1)
             else:
                 transform_lag = []
                     
