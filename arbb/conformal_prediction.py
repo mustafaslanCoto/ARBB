@@ -459,6 +459,7 @@ class bidirect_ts_conformalizer():
             CPs.rename(columns = {i+1:"lower_"+str(round(self.delta[d_index]*100)), i+2:"upper_"+str(round(self.delta[d_index]*100))}, inplace = True)
         return CPs
     
+from statsmodels.tsa.api import VAR
 class var_conformalizer():
     def __init__(self, model_fit, delta, n_windows, H, col_index, calib_metric = "mae", non_stationary_series = None):
         self.delta = delta
@@ -474,7 +475,6 @@ class var_conformalizer():
         self.model_fit = VAR(self.y_train, exog=self.x_train).fit(self.lag_order)
         self.calibrate()
     def backtest(self):
-        from statsmodels.tsa.api import VAR
         #making H-step-ahead forecast n_windows times for each 1-step backward sliding window.
         # We can the think of n_windows as the size of calibration set for each H horizon 
         actuals = []
