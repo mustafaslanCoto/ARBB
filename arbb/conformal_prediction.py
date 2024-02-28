@@ -60,6 +60,7 @@ class bag_boost_ts_conformalizer():
     def non_conformity_func(self):
         acts, preds = self.backtest()
         horizon_scores = []
+        dists = []
         for i in range(self.H):
             # calculating metrics horizon i
             mae =np.abs(acts[:,i] - preds[:,i]) 
@@ -67,6 +68,9 @@ class bag_boost_ts_conformalizer():
             mape = mae/acts[:,i]
             metrics = np.stack((smape,  mape, mae), axis=1)
             horizon_scores.append(metrics)
+            dist = 2*acts[:,i] - preds[:,i]
+            dists.append(dist)
+        self.cp_dist = np.stack(dists).T
         return horizon_scores
     
     
@@ -182,12 +186,16 @@ class s_arima_conformalizer():
         #Calculate non-conformity scores (mae, smape and mape for now) for each forecasted horizon
         acts, preds = self.backtest()
         horizon_scores = []
+        dists = []
         for i in range(self.H):
             mae =np.abs(acts[:,i] - preds[:,i])
             smape = 2*mae/(np.abs(acts[:,i])+np.abs(preds[:,i]))
             mape = mae/acts[:,i]
             metrics = np.stack((smape,  mape, mae), axis=1)
             horizon_scores.append(metrics)
+            dist = 2*acts[:,i] - preds[:,i]
+            dists.append(dist)
+        self.cp_dist = np.stack(dists).T
         return horizon_scores
     
     
@@ -284,12 +292,16 @@ class ets_conformalizer():
         #Calculate non-conformity scores (mae, smape and mape for now) for each forecasted horizon
         acts, preds = self.backtest()
         horizon_scores = []
+        dists = []
         for i in range(self.H):
             mae =np.abs(acts[:,i] - preds[:,i])
             smape = 2*mae/(np.abs(acts[:,i])+np.abs(preds[:,i]))
             mape = mae/acts[:,i]
             metrics = np.stack((smape,  mape, mae), axis=1)
             horizon_scores.append(metrics)
+            dist = 2*acts[:,i] - preds[:,i]
+            dists.append(dist)
+        self.cp_dist = np.stack(dists).T
         return horizon_scores
     
     
@@ -398,6 +410,7 @@ class bidirect_ts_conformalizer():
     def non_conformity_func(self):
         acts, preds = self.backtest()
         horizon_scores = []
+        dists = []
         for i in range(self.H):
             # calculating metrics horizon i
             mae =np.abs(acts[:,i] - preds[:,i]) 
@@ -405,6 +418,9 @@ class bidirect_ts_conformalizer():
             mape = mae/acts[:,i]
             metrics = np.stack((smape,  mape, mae), axis=1)
             horizon_scores.append(metrics)
+            dist = 2*acts[:,i] - preds[:,i]
+            dists.append(dist)
+        self.cp_dist = np.stack(dists).T
         return horizon_scores
     
     
@@ -533,12 +549,16 @@ class var_conformalizer():
         #Calculate non-conformity scores (mae, smape and mape for now) for each forecasted horizon
         acts, preds = self.backtest()
         horizon_scores = []
+        dists = []
         for i in range(self.H):
             mae =np.abs(acts[:,i] - preds[:,i])
             smape = 2*mae/(np.abs(acts[:,i])+np.abs(preds[:,i]))
             mape = mae/acts[:,i]
             metrics = np.stack((smape,  mape, mae), axis=1)
             horizon_scores.append(metrics)
+            dist = 2*acts[:,i] - preds[:,i]
+            dists.append(dist)
+        self.cp_dist = np.stack(dists).T
         return horizon_scores
     
     
