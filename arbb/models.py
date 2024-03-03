@@ -432,7 +432,8 @@ class RandomForest_forecaster:
         self.model_rf = model_rf.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
 #         max_lag = self.n_lag[-1]
 #         lags = self.y[-max_lag:].tolist()
         lags = self.y.tolist()
@@ -566,7 +567,8 @@ class AdaBoost_forecaster:
         self.model_ada = model_ada.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
 #         max_lag = self.n_lag[-1]
 #         lags = self.y[-max_lag:].tolist()
         lags = self.y.tolist()
@@ -699,7 +701,8 @@ class Cubist_forecaster:
         self.model_cub = model_cub.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
 
         lags = self.y.tolist()
         predictions = []
@@ -1010,7 +1013,8 @@ class xgboost_bidirect_forecaster:
         self.model_xgb2 = model_xgb2.fit(self.X, self.y2, verbose = True)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
         tar1_lags = self.y1.tolist()
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
@@ -1177,7 +1181,8 @@ class RandomForest_bidirect_forecaster:
         self.model_rf2 = model_rf2.fit(self.X, self.y2)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
         tar1_lags = self.y1.tolist()
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
@@ -1506,7 +1511,8 @@ class Cubist_bidirect_forecaster:
         self.model_cub2 = model_cub2.fit(self.X, self.y2)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
         tar1_lags = self.y1.tolist()
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
@@ -1673,7 +1679,8 @@ class AdaBoost_bidirect_forecaster:
         self.model_ada2 = model_ada2.fit(self.X, self.y2)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
         tar1_lags = self.y1.tolist()
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
