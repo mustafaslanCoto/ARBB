@@ -298,9 +298,8 @@ class xgboost_forecaster:
         self.model_xgb = model_xgb.fit(self.X, self.y, verbose = True)
 
     def forecast(self, n_ahead, x_test = None):
-        x_dummy = self.data_prep(x_test)
-#         max_lag = self.n_lag[-1]
-#         lags = self.y[-max_lag:].tolist()
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
         lags = self.y.tolist()
         predictions = []
         for i in range(n_ahead):
