@@ -15,7 +15,7 @@ setup(
         packages=find_packages(),
         url='https://github.com/mustafaslanCoto/ARML',
         install_requires=["xgboost", "lightgbm", "catboost", "pandas",
-                          "numpy", "sklearn", "datetime", "hyperopt","statsmodels", "seaborn",
+                          "numpy", "sklearn", "datetime", "hyperopt","statsmodels", "seaborn", "statsforecast",
                           "matplotlib", "window_ops", "cubist"], # add any additional packages that 
         # needs to be installed along with your package. Eg: 'caer'
         
