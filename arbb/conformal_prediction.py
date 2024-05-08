@@ -673,8 +673,8 @@ class bag_boost_aggr_conformalizer():
             predictions.append(sum_forecasts)
             actuals.append(sum_actuals)
             print("model "+str(i+1)+" is completed")
-        self.predictions = np.row_stack(actuals)
-        self.actuals = np.row_stack(predictions)
+        self.predictions = np.row_stack(predictions)
+        self.actuals = np.row_stack(actuals)
         return np.row_stack(actuals), np.row_stack(predictions)
     
     def calculate_qunatile(self, scores_calib):
@@ -813,8 +813,8 @@ class bidirect_aggr_conformalizer():
             predictions.append(sum_forecasts)
             actuals.append(sum_actuals)
             print("model "+str(i+1)+" is completed")
-        self.predictions = np.row_stack(actuals)
-        self.actuals = np.row_stack(predictions)
+        self.predictions = np.row_stack(predictions)
+        self.actuals = np.row_stack(actuals)
         return np.row_stack(actuals), np.row_stack(predictions)
     
     def calculate_qunatile(self, scores_calib):
@@ -933,8 +933,8 @@ class ets_aggr_conformalizer():
             predictions.append(sum_forecasts)
             actuals.append(sum_actuals)
             print("model "+str(i+1)+" is completed")
-        self.predictions = np.row_stack(actuals)
-        self.actuals = np.row_stack(predictions)
+        self.predictions = np.row_stack(predictions)
+        self.actuals = np.row_stack(actuals)
         return np.row_stack(actuals), np.row_stack(predictions)
 
     
@@ -1073,8 +1073,8 @@ class s_arima_aggr_conformalizer():
             predictions.append(sum_forecasts)
             actuals.append(sum_actuals)
             print("model "+str(i+1)+" is completed")
-        self.predictions = np.row_stack(actuals)
-        self.actuals = np.row_stack(predictions)
+        self.predictions = np.row_stack(predictions)
+        self.actuals = np.row_stack(actuals)
         return np.row_stack(actuals), np.row_stack(predictions)
     
     def calculate_qunatile(self, scores_calib):
@@ -1248,8 +1248,8 @@ class var_aggr_conformalizer():
             predictions.append(sum_forecasts)
             actuals.append(sum_actuals)
             print("model "+str(i+1)+" is completed")
-        self.predictions = np.row_stack(actuals)
-        self.actuals = np.row_stack(predictions)
+        self.predictions = np.row_stack(predictions)
+        self.actuals = np.row_stack(actuals)
         return np.row_stack(actuals), np.row_stack(predictions)
     
     def calculate_qunatile(self, scores_calib):
