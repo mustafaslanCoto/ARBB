@@ -1165,7 +1165,7 @@ class var_aggr_conformalizer():
         self.diffs = diffs
         self.calib_metric = calib_metric
         self.models = {}
-        self.last_vals = {i: [] for i in targ_cols}
+        self.last_vals = {i: [] for i in tar_columns}
         for i in self.cols:
             # self.models[i] = ExponentialSmoothing(self.train[i], **self.params[i][0]).fit(**self.params[i][1])
             tar_col = self.train.columns[self.train.columns.str.contains(i)].tolist()
