@@ -21,9 +21,12 @@ class cat_forecaster:
     def data_prep(self, df):
         dfc = df.copy()
         if self.difference is not None:
-            self.last_train = df[self.target_col].tolist()[-1]
-            for i in range(1, self.difference+1):
-                dfc[self.target_col] = dfc[self.target_col].diff(1)
+            if self.difference >1:
+                self.last_train = df[self.target_col].tolist()[-self.difference:]
+            else:
+                self.last_train = df[self.target_col].tolist()[-1]
+            dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('str')
@@ -77,8 +80,15 @@ class cat_forecaster:
             lags.append(pred)
 
         if self.difference is not None:
-            predictions.insert(0, self.last_train)
-            forecasts = np.cumsum(predictions)[-n_ahead:]
+            if self.difference>1:
+                predictions_ = self.last_train+predictions
+                for i in range(len(predictions_)):
+                    if i<len(predictions_)-self.difference:
+                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
+                        forecasts = predictions_[-n_ahead:]
+            else:    
+                predictions.insert(0, self.last_train)
+                forecasts = np.cumsum(predictions)[-n_ahead:]
         else:
             forecasts = np.array(predictions)
         return forecasts
@@ -136,9 +146,11 @@ class lightGBM_forecaster:
     def data_prep(self, df):
         dfc = df.copy()
         if self.difference is not None:
-            self.last_train = df[self.target_col].tolist()[-1]
-            for i in range(1, self.difference+1):
-                dfc[self.target_col] = dfc[self.target_col].diff(1)
+            if self.difference >1:
+                self.last_train = df[self.target_col].tolist()[-self.difference:]
+            else:
+                self.last_train = df[self.target_col].tolist()[-1]
+            dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('category')
@@ -204,8 +216,15 @@ class lightGBM_forecaster:
             predictions.append(pred)
             lags.append(pred)
         if self.difference is not None:
-            predictions.insert(0, self.last_train)
-            forecasts = np.cumsum(predictions)[-n_ahead:]
+            if self.difference>1:
+                predictions_ = self.last_train+predictions
+                for i in range(len(predictions_)):
+                    if i<len(predictions_)-self.difference:
+                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
+                        forecasts = predictions_[-n_ahead:]
+            else:    
+                predictions.insert(0, self.last_train)
+                forecasts = np.cumsum(predictions)[-n_ahead:]
         else:
             forecasts = np.array(predictions)
         return forecasts
