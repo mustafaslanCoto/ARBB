@@ -146,10 +146,10 @@ class lightGBM_forecaster:
     def data_prep(self, df):
         dfc = df.copy()
         if self.difference is not None:
-            if self.difference >1:
-                self.last_train = df[self.target_col].tolist()[-self.difference:]
+            if self.difference > 1:
+                self.last_train = dfc[self.target_col].tolist()[-self.difference:]
             else:
-                self.last_train = df[self.target_col].tolist()[-1]
+                self.last_train = dfc[self.target_col].tolist()[-1]
             dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
         if self.cat_var is not None:
             for c in self.cat_var:
