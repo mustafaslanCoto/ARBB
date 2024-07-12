@@ -34,11 +34,15 @@ def fourier_terms(start, stop, period, num_terms, df_index):
     Returns fourier terms for the given seasonal period and dataframe.
 
             Parameters:
-                    start (int): An integer that should be 0 for the training dataset, whereas for the test dataset, it should correspond to the length of the training data.
-                    stop (int): An integer representing the length of the training dataset is required for the training dataset, while for the testing dataset, it should be the sum of the lengths of both the training and test datasets.
+                    start (int): An integer that should be 0 for the training dataset,
+                    whereas for the test dataset, it should correspond to the length of the training data.
+                    stop (int): An integer representing the length of the training dataset is required
+                    for the training dataset, while for the testing dataset, it should be
+                    the sum of the lengths of both the training and test datasets.
                     period (int): the seosanal period.
                     num_terms (int): It specifies how many pairs of sin and cos terms to include.
-                    df_index: a dataframe (training or test dataset). It specify whether to use the indexes of the training or test dataset for the returned dataframe
+                    df_index: a dataframe (training or test dataset).
+                    It specify whether to use the indexes of the training or test dataset for the returned dataframe
     '''
     t = np.arange(start, stop)
     df = pd.DataFrame(index=df_index.index)
@@ -91,6 +95,34 @@ def rmse(y_true, y_pred):
 
 def smape(y_true, y_pred):
     return 1/len(y_true) * np.sum(2 * np.abs(y_pred-y_true) / (np.abs(y_true) + np.abs(y_pred))*100)
+
+def mase(y_true, y_pred, y_train):
+    """
+    Calculate Mean Absolute Scaled Error (MASE)
+    
+    Parameters:
+    y_true (array-like): Actual values
+    y_pred (array-like): Predicted values
+    y_train (array-like): Training data used to scale the error
+    
+    Returns:
+    float: MASE value
+    """
+    # Calculate the mean absolute error
+    mae = np.mean(np.abs(y_true - y_pred))
+    
+    # Calculate the scaled error
+    scaled_error = np.mean(np.abs(np.diff(y_train)))
+    
+    # Calculate MASE
+    mase = mae / scaled_error
+    
+    return mase
+def cfe(y_true, y_pred):
+    return np.cumsum([a - f for a, f in zip(y_true, y_pred)])[-1]
+def cfe_abs(y_true, y_pred):
+    cfe_t = np.cumsum([a - f for a, f in zip(y_true, y_pred)])
+    return np.abs(cfe_t[-1])
 
 
 def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
