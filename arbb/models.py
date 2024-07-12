@@ -116,7 +116,7 @@ class cat_forecaster:
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
                 elif eval_metric.__name__== 'mase':
-                    accuracy = eval_metric(y_test, yhat, np.array(self.y))
+                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
@@ -251,7 +251,7 @@ class lightGBM_forecaster:
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
                 elif eval_metric.__name__== 'mase':
-                    accuracy = eval_metric(y_test, yhat, np.array(self.y))
+                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
@@ -398,7 +398,7 @@ class xgboost_forecaster:
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
                 elif eval_metric.__name__== 'mase':
-                    accuracy = eval_metric(y_test, yhat, np.array(self.y))
+                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
@@ -548,7 +548,7 @@ class RandomForest_forecaster:
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
                 elif eval_metric.__name__== 'mase':
-                    accuracy = eval_metric(y_test, yhat, np.array(self.y))
+                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
@@ -696,7 +696,7 @@ class AdaBoost_forecaster:
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
                 elif eval_metric.__name__== 'mase':
-                    accuracy = eval_metric(y_test, yhat, np.array(self.y))
+                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
@@ -843,7 +843,7 @@ class Cubist_forecaster:
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
                 elif eval_metric.__name__== 'mase':
-                    accuracy = eval_metric(y_test, yhat, np.array(self.y))
+                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
 #                 print(str(accuracy)+" and len is "+str(len(test)))
