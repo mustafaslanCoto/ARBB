@@ -202,7 +202,10 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
             
             hw_forecast = hw_fit.forecast(len(test))
             forecast_filled = np.nan_to_num(hw_forecast, nan=0)
-            accuracy = eval_metric(test, forecast_filled)
+            if eval_metric.__name__== 'mase':
+                accuracy = eval_metric(test, forecast_filled, np.array(train))
+            else:
+                accuracy = eval_metric(test, forecast_filled)
             metric.append(accuracy)
         score = np.mean(metric)
     
