@@ -11,7 +11,7 @@ from catboost import CatBoostRegressor
 from cubist import Cubist
 
 class cat_forecaster:
-    def __init__(self, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_variables = None):
+    def __init__(self, target_col, n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = CatBoostRegressor
@@ -138,7 +138,7 @@ class cat_forecaster:
         return space_eval(param_space, best_hyperparams)
 
 class lightGBM_forecaster:
-    def __init__(self, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_variables = None):
+    def __init__(self, target_col, n_lag = None, lag_transform = None,differencing_number = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = LGBMRegressor
@@ -274,17 +274,15 @@ class lightGBM_forecaster:
             
     
 class xgboost_forecaster:
-    def __init__(self, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_variables = None):
+    def __init__(self, target_col, n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = XGBRegressor
         self.target_col = target_col
-
-        self.cat_variables = cat_variables
-
         self.n_lag = n_lag
         self.difference = differencing_number
         self.lag_transform = lag_transform
+        self.cat_variables = cat_variables
 
         
     def data_prep(self, df):
@@ -423,27 +421,26 @@ class xgboost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class RandomForest_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, differencing_number = None, cat_dict = None, drop_categ = None):
+    def __init__(self, target_col, n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = RandomForestRegressor
         self.target_col = target_col
-        self.cat_var = cat_dict
         self.n_lag = n_lag
         self.difference = differencing_number
         self.lag_transform = lag_transform
-        self.drop_categ = drop_categ
+        self.cat_variables = cat_variables
         
     
         
     def data_prep(self, df):
         dfc = df.copy()
-        if self.cat_var is not None:
+        if self.cat_variables is not None:
             for col, cat in self.cat_var.items():
                 dfc[col] = dfc[col].astype('category')
                 dfc[col] = dfc[col].cat.set_categories(cat)
             dfc = pd.get_dummies(dfc)
-        if self.drop_categ is not None:
+
             for i in self.drop_categ:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
 
@@ -472,7 +469,9 @@ class RandomForest_forecaster:
             model_rf =self.model(**param)
         else:
             model_rf =self.model()
-
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         self.model_rf = model_rf.fit(self.X, self.y)
@@ -531,6 +530,9 @@ class RandomForest_forecaster:
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         
         def objective(params):
             model =self.model(**params)   
@@ -569,27 +571,26 @@ class RandomForest_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class AdaBoost_forecaster:
-    def __init__(self, target_col, n_lag, lag_transform = None, differencing_number = None, cat_dict = None, drop_categ = None):
+    def __init__(self, target_col, n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = AdaBoostRegressor
         self.target_col = target_col
-        self.cat_var = cat_dict
         self.n_lag = n_lag
         self.difference = differencing_number
         self.lag_transform = lag_transform
-        self.drop_categ = drop_categ
+        self.cat_variables = cat_variables
         
     
         
     def data_prep(self, df):
         dfc = df.copy()
-        if self.cat_var is not None:
+        if self.cat_variables is not None:
             for col, cat in self.cat_var.items():
                 dfc[col] = dfc[col].astype('category')
                 dfc[col] = dfc[col].cat.set_categories(cat)
             dfc = pd.get_dummies(dfc)
-        if self.drop_categ is not None:
+
             for i in self.drop_categ:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
 
@@ -618,6 +619,9 @@ class AdaBoost_forecaster:
             model_ada = self.model(**param)
         else:
             model_ada = self.model()
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         self.model_ada = model_ada.fit(self.X, self.y)
@@ -675,7 +679,9 @@ class AdaBoost_forecaster:
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables] 
         def objective(params):
             model =self.model(**params)   
                 
@@ -713,26 +719,25 @@ class AdaBoost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class Cubist_forecaster:
-    def __init__(self, target_col, n_lag = None, differencing_number = None, lag_transform = None, cat_dict = None, drop_categ = None):
+    def __init__(self, target_col, n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = Cubist
         self.target_col = target_col
-        self.cat_var = cat_dict
         self.n_lag = n_lag
         self.difference = differencing_number
         self.lag_transform = lag_transform
-        self.drop_categ = drop_categ
+        self.cat_variables = cat_variables
     
         
     def data_prep(self, df):
         dfc = df.copy()
-        if self.cat_var is not None:
+        if self.cat_variables is not None:
             for col, cat in self.cat_var.items():
                 dfc[col] = dfc[col].astype('category')
                 dfc[col] = dfc[col].cat.set_categories(cat)
             dfc = pd.get_dummies(dfc)
-        if self.drop_categ is not None:
+
             for i in self.drop_categ:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
@@ -761,6 +766,9 @@ class Cubist_forecaster:
             model_cub =self.model(**param)
         else:
             model_cub =self.model()
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_df = self.data_prep(df)
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         self.model_cub = model_cub.fit(self.X, self.y)
@@ -817,6 +825,9 @@ class Cubist_forecaster:
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         
         def objective(params):
             model =self.model(**params)   
