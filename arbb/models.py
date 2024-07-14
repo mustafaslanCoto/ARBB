@@ -46,7 +46,11 @@ class cat_forecaster:
                     else:
                         dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
-        return dfc
+        if self.target_col in dfc.columns:
+            self.dfc = dfc
+            self.df =df.loc[dfc.index]
+        else:
+            return dfc
     
     def fit(self, df, param = None):
         if param is not None:
@@ -54,9 +58,11 @@ class cat_forecaster:
         else:
             model_cat = self.model()
 
-        model_df = self.data_prep(df)
-        X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        self.model_cat = model_cat.fit(X, self.y, cat_features=self.cat_var, verbose = True)
+        # model_df = self.data_prep(df)
+        # self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        self.data_prep(df)
+        self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
+        self.model_cat = model_cat.fit(self.X, self.y, cat_features=self.cat_var, verbose = True)
     
     def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
@@ -104,6 +110,7 @@ class cat_forecaster:
     
 
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num = 100):
+        self.data_prep(df)
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
 
         def objective(params):
@@ -111,12 +118,15 @@ class cat_forecaster:
 
             
             metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
+            for train_index, test_index in tscv.split(self.df):
+                train, test = self.df.iloc[train_index], self.df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.data_prep(train)
-                X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                self.model_cat = model.fit(X, self.y, cat_features=self.cat_var,
+
+                # model_train = self.data_prep(train)
+                # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                train_dfc = self.dfc.iloc[train_index]
+                self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
+                self.model_cat = model.fit(self.X, self.y, cat_features=self.cat_var,
                             verbose = False)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
@@ -180,7 +190,11 @@ class lightGBM_forecaster:
                         dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])  
             
         dfc = dfc.dropna()
-        return dfc
+        if self.target_col in dfc.columns:
+            self.dfc = dfc
+            self.df =df.loc[dfc.index]
+        else:
+            return dfc
     
     def fit(self, df, param = None):
 
@@ -189,8 +203,10 @@ class lightGBM_forecaster:
         else:
             model_lgb = self.model(verbose=-1)
 
-        model_df = self.data_prep(df)
-        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        # model_df = self.data_prep(df)
+        # self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        self.data_prep(df)
+        self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_lgb = model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var)
     
     def forecast(self, n_ahead, x_test = None):
@@ -247,17 +263,21 @@ class lightGBM_forecaster:
         return forecasts
     
     def tune_model(self, df, cv_split, test_size, param_space,eval_metric, eval_num = 100):
+        self.data_prep(df)
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
             model =self.model(**params, verbose=-1)
 
             metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
+            for train_index, test_index in tscv.split(self.df):
+                train, test = self.df.iloc[train_index], self.df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.data_prep(train)
-                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+
+                # model_train = self.data_prep(train)
+                # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                train_dfc = self.dfc.iloc[train_index]
+                self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
                 self.model_lgb = model.fit(self.X, self.y, categorical_feature=self.cat_var)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
@@ -496,7 +516,11 @@ class RandomForest_forecaster:
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
         dfc = dfc.dropna()
-        return dfc
+        if self.target_col in dfc.columns:
+            self.dfc = dfc
+            self.df =df.loc[dfc.index]
+        else:
+            return dfc
 
     def fit(self, df, param = None):
         if param is not None:
@@ -506,8 +530,10 @@ class RandomForest_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        # model_df = self.data_prep(df)
+        self.data_prep(df)
+        # self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_rf = model_rf.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
@@ -566,20 +592,26 @@ class RandomForest_forecaster:
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+        self.data_prep(df)
+
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
             model =self.model(**params)   
                 
             metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
+            for train_index, test_index in tscv.split(self.df):
+                train, test = self.df.iloc[train_index], self.df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.data_prep(train)
-                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+
+                # model_train = self.data_prep(train)
+                # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                train_dfc = self.dfc.iloc[train_index]
+                self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
+
                 self.model_rf = model.fit(self.X, self.y)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
@@ -652,7 +684,11 @@ class AdaBoost_forecaster:
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
         dfc = dfc.dropna()
-        return dfc
+        if self.target_col in dfc.columns:
+            self.dfc = dfc
+            self.df =df.loc[dfc.index]
+        else:
+            return dfc
 
     def fit(self, df, param = None):
         if param is not None:
@@ -662,8 +698,10 @@ class AdaBoost_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        # model_df = self.data_prep(df)
+        self.data_prep(df)
+        # self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_ada = model_ada.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
@@ -721,19 +759,24 @@ class AdaBoost_forecaster:
         return forecasts
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables] 
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+        self.data_prep(df)
+
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         def objective(params):
             model =self.model(**params)   
                 
             metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
+            for train_index, test_index in tscv.split(self.df):
+                train, test = self.df.iloc[train_index], self.df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.data_prep(train)
-                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+
+                # model_train = self.data_prep(train)
+                # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                train_dfc = self.dfc.iloc[train_index]
+                self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
                 self.model_ada = model.fit(self.X, self.y)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
@@ -805,8 +848,11 @@ class Cubist_forecaster:
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])  
         dfc = dfc.dropna()
-        return dfc
-
+        if self.target_col in dfc.columns:
+            self.dfc = dfc
+            self.df =df.loc[dfc.index]
+        else:
+            return dfc
     def fit(self, df, param = None):
         if param is not None:
             model_cub =self.model(**param)
@@ -815,8 +861,10 @@ class Cubist_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        # model_df = self.data_prep(df)
+        self.data_prep(df)
+        # self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_cub = model_cub.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
@@ -873,20 +921,26 @@ class Cubist_forecaster:
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+        self.data_prep(df)
+
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
             model =self.model(**params)   
                 
             metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
+            for train_index, test_index in tscv.split(self.df):
+                train, test = self.df.iloc[train_index], self.df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.data_prep(train)
-                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+
+                # model_train = self.data_prep(train)
+                # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                train_dfc = self.dfc.iloc[train_index]
+                self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
+                
                 self.model_cub = model.fit(self.X, self.y)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
