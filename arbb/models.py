@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-
+from numba import jit
 
 from sklearn.model_selection import TimeSeriesSplit
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
@@ -21,6 +21,7 @@ class cat_forecaster:
         self.difference = differencing_number
         self.lag_transform = lag_transform
         
+    @jit(nopython=True)
     def data_prep(self, df):
         dfc = df.copy()
         if self.difference is not None:
@@ -52,6 +53,7 @@ class cat_forecaster:
         else:
             return dfc
     
+    @jit(nopython=True)
     def fit(self, df, param = None):
         if param is not None:
             model_cat = self.model(**param)
@@ -64,6 +66,7 @@ class cat_forecaster:
         self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_cat = model_cat.fit(self.X, self.y, cat_features=self.cat_var, verbose = True)
     
+    @jit(nopython=True)
     def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
         predictions = []
@@ -109,10 +112,12 @@ class cat_forecaster:
         return forecasts
     
 
+    @jit(nopython=True)
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num = 100):
         self.data_prep(df)
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
 
+        @jit(nopython=True)
         def objective(params):
             model =self.model(**params)
 
@@ -326,6 +331,7 @@ class xgboost_forecaster:
         self.cat_variables = cat_variables
 
         
+    @jit(nopython=True)
     def data_prep(self, df):
         dfc = df.copy()
         if self.cat_variables is not None:
@@ -364,6 +370,7 @@ class xgboost_forecaster:
         else:
             return dfc
 
+    @jit(nopython=True)
     def fit(self, df, param = None):
         if param is not None:
             model_xgb =self.model(**param)
@@ -378,6 +385,7 @@ class xgboost_forecaster:
         self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_xgb = model_xgb.fit(self.X, self.y, verbose = True)
 
+    @jit(nopython=True)
     def forecast(self, n_ahead, x_test = None):
         if x_test is not None:
             x_dummy = self.data_prep(x_test)
@@ -431,6 +439,7 @@ class xgboost_forecaster:
         return forecasts
 
     
+    @jit(nopython=True)
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
@@ -439,6 +448,7 @@ class xgboost_forecaster:
 
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
+        @jit(nopython=True)
         def objective(params):
             model =self.model(**params)   
                 

@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy import stats
+from numba import jit
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
 def unit_root_test(series, method = "ADF"):
@@ -30,6 +31,7 @@ def plot_PACF_ACF(series, lag_num, figsize = (15, 8)):
     ax[1].grid(which='both')
     pyplot.show()
 
+@jit(nopython=True)
 def fourier_terms(start, stop, period, num_terms, df_index):
     '''
     Returns fourier terms for the given seasonal period and dataframe.
@@ -52,6 +54,7 @@ def fourier_terms(start, stop, period, num_terms, df_index):
         df["cos_"+str(i-1)+"_"+str(period)] = np.cos(2 * np.pi * i * t / period)
     return df
 
+@jit(nopython=True)
 def rolling_median(arr, window):
     """
     Calculate the rolling median of an array.
@@ -75,6 +78,7 @@ def rolling_median(arr, window):
     
     return result
     
+@jit(nopython=True)
 def rolling_quantile(arr, window, q):
     """
     Calculate the rolling quantile of an array.
@@ -175,6 +179,7 @@ def cfe_abs(y_true, y_pred):
     return np.abs(cfe_t[-1])
 
 
+@jit(nopython=True)
 def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
     from sklearn.model_selection import TimeSeriesSplit
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -182,6 +187,7 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
     from hyperopt.pyll import scope
     tscv = TimeSeriesSplit(n_splits=cv_splits, test_size=horizon)
     
+    @jit(nopython=True)
     def objective(params):
         if (params["trend"] != None) & (params["seasonal"] != None):
             alpha = params['smoothing_level']
