@@ -42,7 +42,7 @@ class cat_forecaster:
                 df_array = np.array(dfc[self.target_col].shift(n))
                 for i in k:
                     if i[0].__name__ == "rolling_quantile":
-                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                        dfc["q_"+str(i[2])+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
                     else:
                         dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
@@ -175,7 +175,7 @@ class lightGBM_forecaster:
                 df_array = np.array(dfc[self.target_col].shift(n))
                 for i in k:
                     if i[0].__name__ == "rolling_quantile":
-                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                        dfc["q_"+str(i[2])+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
                     else:
                         dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])  
             
@@ -325,7 +325,7 @@ class xgboost_forecaster:
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
                         if i[0].__name__ == "rolling_quantile":
-                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                            dfc["q_"+str(i[2])+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
@@ -479,7 +479,7 @@ class RandomForest_forecaster:
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
                         if i[0].__name__ == "rolling_quantile":
-                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                            dfc["q_"+str(i[2])+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
         dfc = dfc.dropna()
@@ -635,7 +635,7 @@ class AdaBoost_forecaster:
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
                         if i[0].__name__ == "rolling_quantile":
-                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                            dfc["q_"+str(i[2])+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
         dfc = dfc.dropna()
@@ -788,7 +788,7 @@ class Cubist_forecaster:
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
                         if i[0].__name__ == "rolling_quantile":
-                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                            dfc["q_"+str(i[2])+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])  
         dfc = dfc.dropna()
