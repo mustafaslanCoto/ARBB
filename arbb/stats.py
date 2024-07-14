@@ -51,6 +51,54 @@ def fourier_terms(start, stop, period, num_terms, df_index):
         df["cos_"+str(i-1)+"_"+str(period)] = np.cos(2 * np.pi * i * t / period)
     return df
 
+def rolling_median(arr, window):
+    """
+    Calculate the rolling median of an array.
+    
+    Parameters:
+    arr (array-like): Input array
+    window (int): Size of the rolling window
+    
+    Returns:
+    numpy.ndarray: Array of rolling medians, same length as input array
+    """
+    # Convert input to numpy array if it's not already
+    arr = np.asarray(arr)
+    
+    # Create output array filled with NaN
+    result = np.full(arr.shape, np.nan)
+    
+    # Calculate rolling median
+    for i in range(window - 1, len(arr)):
+        result[i] = np.median(arr[i - window + 1 : i + 1])
+    
+    return result
+    
+def rolling_quantile(arr, window, q):
+    """
+    Calculate the rolling quantile of an array.
+    
+    Parameters:
+    arr (array-like): Input array
+    q (float): Quantile, which must be between 
+    0 and 1 inclusive
+    window (int): Size of the rolling window
+    
+    Returns:
+    numpy.ndarray: Array of rolling quantiles, same length as input array
+    """
+    # Convert input to numpy array if it's not already
+    arr = np.asarray(arr)
+    
+    # Create output array filled with NaN
+    result = np.full(arr.shape, np.nan)
+    
+    # Calculate rolling quantile
+    for i in range(window - 1, len(arr)):
+        result[i] = np.quantile(arr[i - window + 1 : i + 1], q)
+    
+    return result
+
 
 def Kfold_target(train, test, cat_var, target_col, encoded_colname, split_num):
     from sklearn.model_selection import KFold

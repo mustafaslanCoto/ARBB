@@ -41,7 +41,10 @@ class cat_forecaster:
             for n, k in self.lag_transform.items():
                 df_array = np.array(dfc[self.target_col].shift(n))
                 for i in k:
-                    dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
+                    if i[0].__name__ == "rolling_quantile":
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                    else:
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
         return dfc
     
@@ -73,7 +76,10 @@ class cat_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for i in k:
-                        t1 = i[0](df_array, i[1])[-1]
+                        if i[0].__name__ == "rolling_quantile":
+                            t1 = i[0](df_array, i[1], i[2])[-1]
+                        else:
+                            t1 = i[0](df_array, i[1])[-1]
                         transform_lag.append(t1)
             else:
                 transform_lag = []
@@ -168,7 +174,10 @@ class lightGBM_forecaster:
             for n, k in self.lag_transform.items():
                 df_array = np.array(dfc[self.target_col].shift(n))
                 for i in k:
-                    dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])    
+                    if i[0].__name__ == "rolling_quantile":
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                    else:
+                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])  
             
         dfc = dfc.dropna()
         return dfc
@@ -202,7 +211,10 @@ class lightGBM_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for i in k:
-                        t1 = i[0](df_array, i[1])[-1]
+                        if i[0].__name__ == "rolling_quantile":
+                            t1 = i[0](df_array, i[1], i[2])[-1]
+                        else:
+                            t1 = i[0](df_array, i[1])[-1]
                         transform_lag.append(t1)
             else:
                 transform_lag = []
@@ -312,7 +324,10 @@ class xgboost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
-                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
+                        if i[0].__name__ == "rolling_quantile":
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                        else:
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
         return dfc
 
@@ -349,7 +364,10 @@ class xgboost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for i in k:
-                        t1 = i[0](df_array, i[1])[-1]
+                        if i[0].__name__ == "rolling_quantile":
+                            t1 = i[0](df_array, i[1], i[2])[-1]
+                        else:
+                            t1 = i[0](df_array, i[1])[-1]
                         transform_lag.append(t1)
             else:
                 transform_lag = []
@@ -460,7 +478,10 @@ class RandomForest_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
-                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])    
+                        if i[0].__name__ == "rolling_quantile":
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                        else:
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
         dfc = dfc.dropna()
         return dfc
 
@@ -499,7 +520,10 @@ class RandomForest_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for i in k:
-                        t1 = i[0](df_array, i[1])[-1]
+                        if i[0].__name__ == "rolling_quantile":
+                            t1 = i[0](df_array, i[1], i[2])[-1]
+                        else:
+                            t1 = i[0](df_array, i[1])[-1]
                         transform_lag.append(t1)
             else:
                 transform_lag = []
@@ -610,7 +634,10 @@ class AdaBoost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
-                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
+                        if i[0].__name__ == "rolling_quantile":
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                        else:
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])   
         dfc = dfc.dropna()
         return dfc
 
@@ -649,7 +676,10 @@ class AdaBoost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for i in k:
-                        t1 = i[0](df_array, i[1])[-1]
+                        if i[0].__name__ == "rolling_quantile":
+                            t1 = i[0](df_array, i[1], i[2])[-1]
+                        else:
+                            t1 = i[0](df_array, i[1])[-1]
                         transform_lag.append(t1)
             else:
                 transform_lag = []
@@ -757,7 +787,10 @@ class Cubist_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for i in k:
-                        dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])    
+                        if i[0].__name__ == "rolling_quantile":
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1], i[2])
+                        else:
+                            dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1])  
         dfc = dfc.dropna()
         return dfc
 
@@ -794,7 +827,10 @@ class Cubist_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for i in k:
-                        t1 = i[0](df_array, i[1])[-1]
+                        if i[0].__name__ == "rolling_quantile":
+                            t1 = i[0](df_array, i[1], i[2])[-1]
+                        else:
+                            t1 = i[0](df_array, i[1])[-1]
                         transform_lag.append(t1)
             else:
                 transform_lag = []
