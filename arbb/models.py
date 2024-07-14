@@ -418,7 +418,7 @@ class xgboost_forecaster:
 
                 # model_train = self.data_prep(train)
                 # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-                train_dfc = self.dfc[train_index]
+                train_dfc = self.dfc.iloc[train_index]
                 self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
 
                 self.model_xgb = model.fit(self.X, self.y, verbose = True)
