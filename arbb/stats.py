@@ -187,7 +187,6 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
     from hyperopt.pyll import scope
     tscv = TimeSeriesSplit(n_splits=cv_splits, test_size=horizon)
     
-    @jit(nopython=True)
     def objective(params):
         if (params["trend"] != None) & (params["seasonal"] != None):
             alpha = params['smoothing_level']
