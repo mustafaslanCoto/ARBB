@@ -329,9 +329,11 @@ class xgboost_forecaster:
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
-        self.dfc = dfc
-        self.df =df.loc[dfc.index]
-        # return dfc
+        if self.target_col in dfc.columns:
+            self.dfc = dfc
+            self.df =df.loc[dfc.index]
+        else:
+            return dfc
 
     def fit(self, df, param = None):
         if param is not None:
