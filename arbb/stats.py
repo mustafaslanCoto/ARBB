@@ -95,7 +95,7 @@ def rolling_quantile(arr, window, q):
     
     # Calculate rolling quantile
     for i in range(window - 1, len(arr)):
-        result[i] = np.quantile(arr[i - window + 1 : i + 1], q)
+        result[i] = np.quantile(arr[i - window + 1 : i + 1], q, method="lower")
     
     return result
 
