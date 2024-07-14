@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from scipy import stats
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
 def unit_root_test(series, method = "ADF"):
@@ -95,7 +96,8 @@ def rolling_quantile(arr, window, q):
     
     # Calculate rolling quantile
     for i in range(window - 1, len(arr)):
-        result[i] = np.quantile(arr[i - window + 1 : i + 1], q, method="lower")
+        # result[i] = np.quantile(arr[i - window + 1 : i + 1], q, method="lower")
+        result[i] = stats.mstats.mquantiles(arr[i - window + 1 : i + 1], prob=q, alphap=0.5, betap=0.5)[0]
     
     return result
 
