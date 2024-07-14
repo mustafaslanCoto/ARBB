@@ -191,13 +191,13 @@ class lightGBM_forecaster:
             
         dfc = dfc.dropna()
 
-        float64_cols_dfc = dfc.select_dtypes(include=['float64']).columns
-        float64_cols_df = df.select_dtypes(include=['float64']).columns
-        # Now, convert only these columns to int16
-        for col in float64_cols_dfc:
-            dfc[col] = dfc[col].astype(np.float16)
-        for col in float64_cols_df:
-            df[col] = df[col].astype(np.float16)
+        # float64_cols_dfc = dfc.select_dtypes(include=['float64']).columns
+        # float64_cols_df = df.select_dtypes(include=['float64']).columns
+        # # Now, convert only these columns to int16
+        # for col in float64_cols_dfc:
+        #     dfc[col] = dfc[col].astype(np.float16)
+        # for col in float64_cols_df:
+        #     df[col] = df[col].astype(np.float16)
 
         if self.target_col in dfc.columns:
             self.dfc = dfc
