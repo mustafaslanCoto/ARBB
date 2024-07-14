@@ -401,12 +401,12 @@ class xgboost_forecaster:
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
-        self.data_prep(df)
-
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+        self.data_prep(df)
+
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
             model =self.model(**params)   
