@@ -441,8 +441,16 @@ class xgboost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
+            # if 'lags' in params:
+            #     if type(params["lags"]) is list:
+            #         self.n_lag = params["lags"]
+            #     else:
+            #         self.n_lag = range(1, params["lags"]+1)
+            #     self.data_prep(df)
+            #     model =self.model(**dict(list(params.items())[:-1]))
+            # else:
+            #     model =self.model(**params)  
             model =self.model(**params)   
-                
             metric = []
             for train_index, test_index in tscv.split(self.df):
                 train, test = self.df.iloc[train_index], self.df.iloc[test_index]
