@@ -329,7 +329,9 @@ class xgboost_forecaster:
                         else:
                             dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
         dfc = dfc.dropna()
-        return dfc
+        self.dfc = dfc
+        self.df =df.loc[dfc.index]
+        # return dfc
 
     def fit(self, df, param = None):
         if param is not None:
@@ -339,8 +341,10 @@ class xgboost_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        # model_df = self.data_prep(df)
+        self.data_prep(df)
+        # self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
+        self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_xgb = model_xgb.fit(self.X, self.y, verbose = True)
 
     def forecast(self, n_ahead, x_test = None):
@@ -397,6 +401,8 @@ class xgboost_forecaster:
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
+        self.data_prep(df)
+
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
@@ -406,12 +412,17 @@ class xgboost_forecaster:
             model =self.model(**params)   
                 
             metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
+            for train_index, test_index in tscv.split(self.df):
+                train, test = self.df.iloc[train_index], self.df.iloc[test_index]
                 x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
-                model_train = self.data_prep(train)
-                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+
+                # model_train = self.data_prep(train)
+                # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+                train_dfc = self.dfc[train_index]
+                self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
+
                 self.model_xgb = model.fit(self.X, self.y, verbose = True)
+
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
