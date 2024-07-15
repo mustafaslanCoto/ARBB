@@ -436,21 +436,22 @@ class xgboost_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        self.data_prep(df)
+        if 'lags' not in param_space:
+            self.data_prep(df)
 
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            # if 'lags' in params:
-            #     if type(params["lags"]) is list:
-            #         self.n_lag = params["lags"]
-            #     else:
-            #         self.n_lag = range(1, params["lags"]+1)
-            #     self.data_prep(df)
-            #     model =self.model(**dict(list(params.items())[:-1]))
-            # else:
-            #     model =self.model(**params)  
-            model =self.model(**params)   
+            if 'lags' in params:
+                if type(params["lags"]) is list:
+                    self.n_lag = params["lags"]
+                else:
+                    self.n_lag = range(1, params["lags"]+1)
+                self.data_prep(df)
+                model =self.model(**dict(list(params.items())[:-1]))
+            else:
+                model =self.model(**params)  
+            # model =self.model(**params)   
             metric = []
             for train_index, test_index in tscv.split(self.df):
                 train, test = self.df.iloc[train_index], self.df.iloc[test_index]
