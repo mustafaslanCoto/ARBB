@@ -443,8 +443,8 @@ class xgboost_forecaster:
         
         def objective(params):
             if 'lags' in params:
-                if type(params["lags"]) is list:
-                    self.n_lag = params["lags"]
+                if type(params["lags"]) is tuple:
+                    self.n_lag = list(params["lags"])
                 else:
                     self.n_lag = range(1, params["lags"]+1)
                 self.data_prep(df)
