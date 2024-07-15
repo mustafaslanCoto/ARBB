@@ -110,12 +110,22 @@ class cat_forecaster:
     
 
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num = 100):
-        self.data_prep(df)
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        if 'lags' not in param_space:
+            self.data_prep(df)
 
-        @jit(nopython=True)
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
         def objective(params):
-            model =self.model(**params)
+            if 'lags' in params:
+                if type(params["lags"]) is tuple:
+                    self.n_lag = list(params["lags"])
+                else:
+                    self.n_lag = range(1, params["lags"]+1)
+                self.data_prep(df)
+                model =self.model(**{k: v for k, v in params.items() if k != "lags"})
+            else:
+                model =self.model(**params)  
+            # model =self.model(**params)  
 
             
             metric = []
@@ -273,11 +283,22 @@ class lightGBM_forecaster:
         return forecasts
     
     def tune_model(self, df, cv_split, test_size, param_space,eval_metric, eval_num = 100):
-        self.data_prep(df)
+        if 'lags' not in param_space:
+            self.data_prep(df)
+
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(**params, verbose=-1)
+            if 'lags' in params:
+                if type(params["lags"]) is tuple:
+                    self.n_lag = list(params["lags"])
+                else:
+                    self.n_lag = range(1, params["lags"]+1)
+                self.data_prep(df)
+                model =self.model(**{k: v for k, v in params.items() if k != "lags"}, verbose=-1)
+            else:
+                model =self.model(**params, verbose=-1)  
+            # model =self.model(**params, verbose=-1)
 
             metric = []
             for train_index, test_index in tscv.split(self.df):
@@ -448,7 +469,7 @@ class xgboost_forecaster:
                 else:
                     self.n_lag = range(1, params["lags"]+1)
                 self.data_prep(df)
-                model =self.model(**dict(list(params.items())[:-1]))
+                model =self.model(**{k: v for k, v in params.items() if k != "lags"})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)   
@@ -614,12 +635,22 @@ class RandomForest_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        self.data_prep(df)
+        if 'lags' not in param_space:
+            self.data_prep(df)
 
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(**params)   
+            if 'lags' in params:
+                if type(params["lags"]) is tuple:
+                    self.n_lag = list(params["lags"])
+                else:
+                    self.n_lag = range(1, params["lags"]+1)
+                self.data_prep(df)
+                model =self.model(**{k: v for k, v in params.items() if k != "lags"})
+            else:
+                model =self.model(**params)  
+            # model =self.model(**params)  
                 
             metric = []
             for train_index, test_index in tscv.split(self.df):
@@ -781,11 +812,22 @@ class AdaBoost_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        self.data_prep(df)
+        if 'lags' not in param_space:
+            self.data_prep(df)
 
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
         def objective(params):
-            model =self.model(**params)   
+            if 'lags' in params:
+                if type(params["lags"]) is tuple:
+                    self.n_lag = list(params["lags"])
+                else:
+                    self.n_lag = range(1, params["lags"]+1)
+                self.data_prep(df)
+                model =self.model(**{k: v for k, v in params.items() if k != "lags"})
+            else:
+                model =self.model(**params)  
+            # model =self.model(**params)  
                 
             metric = []
             for train_index, test_index in tscv.split(self.df):
@@ -943,12 +985,22 @@ class Cubist_forecaster:
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        self.data_prep(df)
+        if 'lags' not in param_space:
+            self.data_prep(df)
 
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            model =self.model(**params)   
+            if 'lags' in params:
+                if type(params["lags"]) is tuple:
+                    self.n_lag = list(params["lags"])
+                else:
+                    self.n_lag = range(1, params["lags"]+1)
+                self.data_prep(df)
+                model =self.model(**{k: v for k, v in params.items() if k != "lags"})
+            else:
+                model =self.model(**params)  
+            # model =self.model(**params)    
                 
             metric = []
             for train_index, test_index in tscv.split(self.df):
