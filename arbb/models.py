@@ -886,7 +886,7 @@ class AdaBoost_forecaster:
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_train = self.data_prep(df)
         self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-        self.model_ada = model_ada.fit(self.X, self.y, verbose = True)
+        self.model_ada = model_ada.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
         self.H = n_ahead
@@ -985,7 +985,7 @@ class AdaBoost_forecaster:
                 # train_dfc = self.dfc.iloc[train_index]
                 # self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
 
-                self.model_ada = model.fit(self.X, self.y, verbose = True)
+                self.model_ada = model.fit(self.X, self.y)
 
 
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
@@ -1092,7 +1092,7 @@ class Cubist_forecaster:
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_train = self.data_prep(df)
         self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-        self.model_cub = model_cub.fit(self.X, self.y, verbose = True)
+        self.model_cub = model_cub.fit(self.X, self.y)
 
     def forecast(self, n_ahead, x_test = None):
         self.H = n_ahead
@@ -1191,7 +1191,7 @@ class Cubist_forecaster:
                 # train_dfc = self.dfc.iloc[train_index]
                 # self.X, self.y = train_dfc.drop(columns =self.target_col), train_dfc[self.target_col]
 
-                self.model_cub = model.fit(self.X, self.y, verbose = True)
+                self.model_cub = model.fit(self.X, self.y)
 
 
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
