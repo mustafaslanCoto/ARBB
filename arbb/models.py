@@ -168,7 +168,7 @@ class cat_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["lags", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)  
@@ -391,7 +391,7 @@ class lightGBM_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["lags", "box_cox_lmda", "box_cox_biasadj"])}, verbose=-1)
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])}, verbose=-1)
             else:
                 model =self.model(**params, verbose=-1)  
             # model =self.model(**params, verbose=-1)
@@ -613,7 +613,7 @@ class xgboost_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["lags", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)   
@@ -836,7 +836,7 @@ class RandomForest_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["lags", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)  
@@ -1060,7 +1060,7 @@ class AdaBoost_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["lags", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)   
@@ -1284,7 +1284,7 @@ class Cubist_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["lags", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)   
