@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 from numba import jit
+from scipy.stats import boxcox
+from scipy.special import inv_boxcox
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
 def unit_root_test(series, method = "ADF"):
@@ -199,6 +201,44 @@ def cfe(y_true, y_pred):
 def cfe_abs(y_true, y_pred):
     cfe_t = np.cumsum([a - f for a, f in zip(y_true, y_pred)])
     return np.abs(cfe_t[-1])
+
+
+def box_cox_transform(x, shift, box_cox_lmda = None):
+    if (box_cox_lmda == None):
+        if shift ==True:
+            transformed_data, lmbda = boxcox((np.array(x)+1))
+        else:
+            transformed_data, lmbda = boxcox(np.array(x))
+            
+    if (box_cox_lmda != None):
+        if shift ==True:
+            lmbda = box_cox_lmda
+            transformed_data = boxcox((np.array(x)+1), lmbda)
+        else:
+            lmbda = box_cox_lmda
+            transformed_data = boxcox(np.array(x), lmbda)
+    return transformed_data, lmbda
+
+def back_box_cox_transform(y_pred, lmda, shift, box_cox_biasadj):
+    if (box_cox_biasadj==False):
+        if shift == True:
+            forecast = inv_boxcox(y_pred, lmda)-1
+        else:
+            forecast = inv_boxcox(y_pred, lmda)
+            
+    if (box_cox_biasadj== True):
+        pred_var = np.var(y_pred)
+        if shift == True:
+            if lmda ==0:
+                forecast = np.exp(y_pred)*(1+pred_var/2)-1
+            else:
+                forecast = ((lmda*y_pred+1)**(1/lmda))*(1+((1-lmda)*pred_var)/(2*((lmda*y_pred+1)**2)))-1
+        else:
+            if lmda ==0:
+                forecast = np.exp(y_pred)*(1+pred_var/2)
+            else:
+                forecast = ((lmda*y_pred+1)**(1/lmda))*(1+((1-lmda)*pred_var)/(2*((lmda*y_pred+1)**2)))
+    return forecast
 
 
 def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):

@@ -10,9 +10,11 @@ from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor
 from catboost import CatBoostRegressor
 from cubist import Cubist
 from sklearn.linear_model import LinearRegression
+from arbb.stats import box_cox_transform, back_box_cox_transform
 
 class cat_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None):
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = CatBoostRegressor
@@ -23,10 +25,18 @@ class cat_forecaster:
         self.lag_transform = lag_transform
         self.trend = add_trend
         self.trend_type = trend_type
+        self.box_cox = box_cox
+        self.lmda = box_cox_lmda
+        self.biasadj = box_cox_biasadj
 
     def data_prep(self, df):
         dfc = df.copy()
-        
+        if self.box_cox == True:
+            self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+            trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
+            dfc[self.target_col] = trans_data
+
+
         if (self.trend ==True):
             self.len = len(dfc)
             self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
@@ -134,7 +144,9 @@ class cat_forecaster:
         else:
             forecasts = np.array(predictions)
         if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+            forecasts = trend_pred+forecasts
+        if self.box_cox == True:
+            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
     
 
@@ -194,7 +206,8 @@ class cat_forecaster:
         return space_eval(param_space, best_hyperparams)
 
 class lightGBM_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,differencing_number = None, cat_variables = None):
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,differencing_number = None, cat_variables = None,
+                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = LGBMRegressor
@@ -205,9 +218,17 @@ class lightGBM_forecaster:
         self.lag_transform = lag_transform
         self.trend = add_trend
         self.trend_type = trend_type
+        self.box_cox = box_cox
+        self.lmda = box_cox_lmda
+        self.biasadj = box_cox_biasadj
         
     def data_prep(self, df):
         dfc = df.copy()
+
+        if self.box_cox == True:
+            self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+            trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
+            dfc[self.target_col] = trans_data
 
         if (self.trend ==True):
             self.len = len(dfc)
@@ -341,6 +362,8 @@ class lightGBM_forecaster:
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
             
+        if self.box_cox == True:
+            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
     
     def tune_model(self, df, cv_split, test_size, param_space,eval_metric, eval_num = 100):
@@ -400,7 +423,8 @@ class lightGBM_forecaster:
             
     
 class xgboost_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None):
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = XGBRegressor
@@ -411,6 +435,9 @@ class xgboost_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        self.box_cox = box_cox
+        self.lmda = box_cox_lmda
+        self.biasadj = box_cox_biasadj
 
         
     def data_prep(self, df):
@@ -425,6 +452,10 @@ class xgboost_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col in dfc.columns):
+            if self.box_cox == True:
+                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
+                dfc[self.target_col] = trans_data
             
             if (self.trend ==True):
                 self.len = len(dfc)
@@ -542,6 +573,8 @@ class xgboost_forecaster:
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
             
+        if self.box_cox == True:
+            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
 
     
@@ -604,7 +637,8 @@ class xgboost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class RandomForest_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None):
+    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None,
+                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = RandomForestRegressor
@@ -615,6 +649,9 @@ class RandomForest_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        self.box_cox = box_cox
+        self.lmda = box_cox_lmda
+        self.biasadj = box_cox_biasadj
         
     
         
@@ -630,6 +667,11 @@ class RandomForest_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
 
         if (self.target_col in dfc.columns):
+
+            if self.box_cox == True:
+                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
+                dfc[self.target_col] = trans_data
             
             if (self.trend ==True):
                 self.len = len(dfc)
@@ -747,6 +789,8 @@ class RandomForest_forecaster:
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
             
+        if self.box_cox == True:
+            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
 
     
@@ -809,7 +853,8 @@ class RandomForest_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class AdaBoost_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None):
+    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None,
+                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = AdaBoostRegressor
@@ -820,6 +865,10 @@ class AdaBoost_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        self.box_cox = box_cox
+        self.lmda = box_cox_lmda
+        self.biasadj = box_cox_biasadj
+
 
         
     def data_prep(self, df):
@@ -835,6 +884,11 @@ class AdaBoost_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col in dfc.columns):
+
+            if self.box_cox == True:
+                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
+                dfc[self.target_col] = trans_data
             
             if (self.trend ==True):
                 self.len = len(dfc)
@@ -951,7 +1005,9 @@ class AdaBoost_forecaster:
             forecasts = np.array(predictions)
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
-            
+
+        if self.box_cox == True:
+            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
 
     
@@ -1015,7 +1071,8 @@ class AdaBoost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class Cubist_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None):
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = Cubist
@@ -1026,6 +1083,9 @@ class Cubist_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        self.box_cox = box_cox
+        self.lmda = box_cox_lmda
+        self.biasadj = box_cox_biasadj
 
         
     def data_prep(self, df):
@@ -1041,6 +1101,11 @@ class Cubist_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col in dfc.columns):
+
+            if self.box_cox == True:
+                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
+                dfc[self.target_col] = trans_data
             
             if (self.trend ==True):
                 self.len = len(dfc)
@@ -1156,8 +1221,10 @@ class Cubist_forecaster:
         else:
             forecasts = np.array(predictions)
         if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
-            
+            forecasts = trend_pred+forecasts  
+              
+        if self.box_cox == True:
+            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
 
     
