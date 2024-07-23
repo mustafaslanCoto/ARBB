@@ -147,7 +147,7 @@ def rmse(y_true, y_pred):
 def smape(y_true, y_pred):
     return 1/len(y_true) * np.sum(2 * np.abs(y_pred-y_true) / (np.abs(y_true) + np.abs(y_pred))*100)
 
-def mase(y_true, y_pred, y_train):
+def MeanAbsoluteScaledError(y_true, y_pred, y_train):
     """
     Calculate Mean Absolute Scaled Error (MASE)
     
@@ -169,6 +169,31 @@ def mase(y_true, y_pred, y_train):
     mase = mae / scaled_error
     
     return mase
+
+def MedianAbsoluteScaledError(y_true, y_pred, y_train):
+    """
+    Calculate Median Absolute Scaled Error (MASE)
+    
+    Parameters:
+    y_true (array-like): Actual values
+    y_pred (array-like): Predicted values
+    y_train (array-like): Training data used to scale the error
+    
+    Returns:
+    float: MASE value
+    """
+    # Calculate the mean absolute error
+    mae = np.median(np.abs(y_true - y_pred))
+    
+    # Calculate the scaled error
+    scaled_error = np.median(np.abs(np.diff(y_train)))
+    
+    # Calculate MASE
+    mase = mae / scaled_error
+    
+    return mase
+
+
 def cfe(y_true, y_pred):
     return np.cumsum([a - f for a, f in zip(y_true, y_pred)])[-1]
 def cfe_abs(y_true, y_pred):

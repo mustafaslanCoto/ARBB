@@ -171,7 +171,7 @@ class cat_forecaster:
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
-                elif eval_metric.__name__== 'mase':
+                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
                     accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
@@ -376,7 +376,7 @@ class lightGBM_forecaster:
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
-                elif eval_metric.__name__== 'mase':
+                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
                     accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
@@ -580,7 +580,7 @@ class xgboost_forecaster:
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
-                elif eval_metric.__name__== 'mase':
+                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
                     accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
@@ -785,7 +785,7 @@ class RandomForest_forecaster:
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
-                elif eval_metric.__name__== 'mase':
+                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
                     accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
@@ -991,7 +991,7 @@ class AdaBoost_forecaster:
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
-                elif eval_metric.__name__== 'mase':
+                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
                     accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
@@ -1197,7 +1197,7 @@ class Cubist_forecaster:
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
                 if eval_metric.__name__== 'mean_squared_error':
                     accuracy = eval_metric(y_test, yhat, squared=False)
-                elif eval_metric.__name__== 'mase':
+                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
                     accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     accuracy = eval_metric(y_test, yhat)
