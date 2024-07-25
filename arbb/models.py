@@ -155,12 +155,14 @@ class cat_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
                     self.lmda = params["box_cox_lmda"]
 
@@ -168,7 +170,7 @@ class cat_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)  
@@ -378,12 +380,14 @@ class lightGBM_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
                     self.lmda = params["box_cox_lmda"]
 
@@ -391,7 +395,8 @@ class lightGBM_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])}, verbose=-1)
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}, verbose=-1)
+
             else:
                 model =self.model(**params, verbose=-1)  
             # model =self.model(**params, verbose=-1)
@@ -600,12 +605,14 @@ class xgboost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
                     self.lmda = params["box_cox_lmda"]
 
@@ -613,7 +620,7 @@ class xgboost_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)   
@@ -823,12 +830,14 @@ class RandomForest_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
                     self.lmda = params["box_cox_lmda"]
 
@@ -836,7 +845,7 @@ class RandomForest_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)  
@@ -1047,12 +1056,14 @@ class AdaBoost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
                     self.lmda = params["box_cox_lmda"]
 
@@ -1060,7 +1071,7 @@ class AdaBoost_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)   
@@ -1271,12 +1282,14 @@ class Cubist_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
                     self.lmda = params["box_cox_lmda"]
 
@@ -1284,7 +1297,7 @@ class Cubist_forecaster:
                     self.biasadj = params["box_cox_biasadj"]
 
                 # self.data_prep(df)
-                model =self.model(**{k: v for k, v in params.items() if (k not in ["n_lag", "box_cox_lmda", "box_cox_biasadj"])})
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])})
             else:
                 model =self.model(**params)  
             # model =self.model(**params)   
