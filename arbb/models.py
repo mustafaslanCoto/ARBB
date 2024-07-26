@@ -6,7 +6,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
-from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor
+from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, HistGradientBoostingRegressor
 from catboost import CatBoostRegressor
 from cubist import Cubist
 from sklearn.linear_model import LinearRegression
@@ -145,6 +145,8 @@ class cat_forecaster:
             forecasts = np.array(predictions)
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts
+        forecasts = np.array([max(0, x) for x in forecasts])
+
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
@@ -275,18 +277,6 @@ class lightGBM_forecaster:
             
         dfc = dfc.dropna()
 
-        # float64_cols_dfc = dfc.select_dtypes(include=['float64']).columns
-        # float64_cols_df = df.select_dtypes(include=['float64']).columns
-        # # Now, convert only these columns to int16
-        # for col in float64_cols_dfc:
-        #     dfc[col] = dfc[col].astype(np.float16)
-        # for col in float64_cols_df:
-        #     df[col] = df[col].astype(np.float16)
-
-        # if self.target_col in dfc.columns:
-        #     self.dfc = dfc
-        #     self.df =df.loc[dfc.index]
-        # else:
         return dfc
     
     def fit(self, df, param = None):
@@ -368,7 +358,7 @@ class lightGBM_forecaster:
 
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
-            
+        forecasts = np.array([max(0, x) for x in forecasts])   
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
@@ -589,7 +579,7 @@ class xgboost_forecaster:
 
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
-            
+        forecasts = np.array([max(0, x) for x in forecasts])    
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
@@ -814,7 +804,7 @@ class RandomForest_forecaster:
             forecasts = np.array(predictions)
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
-            
+        forecasts = np.array([max(0, x) for x in forecasts])      
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
@@ -1040,7 +1030,7 @@ class AdaBoost_forecaster:
             forecasts = np.array(predictions)
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
-
+        forecasts = np.array([max(0, x) for x in forecasts])  
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
@@ -1266,7 +1256,7 @@ class Cubist_forecaster:
             forecasts = np.array(predictions)
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts  
-              
+        forecasts = np.array([max(0, x) for x in forecasts])        
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
@@ -1338,6 +1328,217 @@ class Cubist_forecaster:
                         trials = trials)
         # best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
         #                    else best_hyperparams[i] for i in best_hyperparams}
+        return space_eval(param_space, best_hyperparams)
+    
+class HistGradientBoosting_forecaster:
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
+        if (n_lag == None) and (lag_transform == None):
+            raise ValueError('Expected either n_lag or lag_transform args')
+        self.model = HistGradientBoostingRegressor
+        self.target_col = target_col
+        self.n_lag = n_lag
+        self.difference = differencing_number
+        self.lag_transform = lag_transform
+        self.cat_variables = cat_variables
+        self.trend = add_trend
+        self.trend_type = trend_type
+        self.box_cox = box_cox
+        self.lmda = box_cox_lmda
+        self.biasadj = box_cox_biasadj
+
+        
+    def data_prep(self, df):
+        dfc = df.copy()
+        if self.cat_variables is not None:
+            for col, cat in self.cat_var.items():
+                dfc[col] = dfc[col].astype('category')
+                dfc[col] = dfc[col].cat.set_categories(cat)
+            dfc = pd.get_dummies(dfc)
+
+            for i in self.drop_categ:
+                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+                
+        if (self.target_col in dfc.columns):
+            if self.box_cox == True:
+                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
+                dfc[self.target_col] = trans_data
+            
+            if (self.trend ==True):
+                self.len = len(dfc)
+                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+            if self.difference is not None:
+                if self.difference >1:
+                    self.last_train = dfc[self.target_col].tolist()[-self.difference:]
+                else:
+                    self.last_train = dfc[self.target_col].tolist()[-1]
+                dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+
+            if self.n_lag is not None:
+                for i in self.n_lag:
+                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+                
+            if self.lag_transform is not None:
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(dfc[self.target_col].shift(n))
+                    for f in k:
+                        if f[0].__name__ == "rolling_quantile":
+                            dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
+                        else:
+                            dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
+                            
+        if (self.trend ==True) & (self.trend_type == "feature"):
+
+            if (self.target_col in dfc.columns):
+                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+        dfc = dfc.dropna()
+
+        return dfc
+
+    def fit(self, df, param = None):
+        if param is not None:
+            model_hist =self.model(**param)
+        else:
+            model_hist =self.model()
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+        
+        model_train = self.data_prep(df)
+        self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+
+        self.model_hist = model_hist.fit(self.X, self.y)
+
+    def forecast(self, n_ahead, x_test = None):
+        if x_test is not None:
+            x_dummy = self.data_prep(x_test)
+        lags = self.y.tolist()
+        predictions = []
+
+        if self.trend ==True:
+            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
+        for i in range(n_ahead):
+            if x_test is not None:
+                x_var = x_dummy.iloc[i, 0:].tolist()
+            else:
+                x_var = []
+                
+            if self.n_lag is not None:
+                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
+            else:
+                inp_lag = []
+
+            if self.lag_transform is not None:
+                transform_lag = []    
+                for n, k in self.lag_transform.items():
+                    df_array = np.array(pd.Series(lags).shift(n-1))
+                    for f in k:
+                        if f[0].__name__ == "rolling_quantile":
+                            t1 = f[0](df_array, f[1], f[2])[-1]
+                        else:
+                            t1 = f[0](df_array, f[1])[-1]
+                        transform_lag.append(t1)
+            else:
+                transform_lag = []
+                
+            if (self.trend ==True) & (self.trend_type == "feature"):
+                trend_var = [trend_pred[i]]
+            else:
+                trend_var = [] 
+                    
+            inp = x_var+inp_lag+transform_lag+trend_var
+            df_inp = pd.DataFrame(inp).T
+            df_inp.columns = self.X.columns
+
+            pred = self.model_hist.predict(df_inp)[0]
+            predictions.append(pred)
+            lags.append(pred)
+
+        if self.difference is not None:
+            if self.difference>1:
+                predictions_ = self.last_train+predictions
+                for i in range(len(predictions_)):
+                    if i<len(predictions_)-self.difference:
+                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
+                        forecasts = predictions_[-n_ahead:]
+            else:    
+                predictions.insert(0, self.last_train)
+                forecasts = np.cumsum(predictions)[-n_ahead:]
+        else:
+            forecasts = np.array(predictions)
+
+        if (self.trend ==True)&(self.trend_type =="component"):
+            forecasts = trend_pred+forecasts    
+        forecasts = np.array([max(0, x) for x in forecasts])      
+        if self.box_cox == True:
+            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
+        return forecasts
+
+    
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+
+
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        def objective(params):
+            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                model =self.model(**{k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])})
+            else:
+                model =self.model(**params)   
+            metric = []
+            for train_index, test_index in tscv.split(df):
+                train, test = df.iloc[train_index], df.iloc[test_index]
+                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+
+                model_train = self.data_prep(train)
+                self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
+
+                self.model_hist = model.fit(self.X, self.y)
+
+                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
+                if eval_metric.__name__== 'mean_squared_error':
+                    accuracy = eval_metric(y_test, yhat, squared=False)
+                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
+                else:
+                    accuracy = eval_metric(y_test, yhat)
+                metric.append(accuracy)
+            score = np.mean(metric)
+
+            print ("SCORE:", score)
+            return {'loss':score, 'status':STATUS_OK}
+            
+            
+        trials = Trials()
+
+        best_hyperparams = fmin(fn = objective,
+                        space = param_space,
+                        algo = tpe.suggest,
+                        max_evals = eval_num,
+                        trials = trials)
+
         return space_eval(param_space, best_hyperparams)
     
 class lightGBM_bidirect_forecaster:
