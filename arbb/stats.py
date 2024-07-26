@@ -4,6 +4,7 @@ from scipy import stats
 from numba import jit
 from scipy.stats import boxcox
 from scipy.special import inv_boxcox
+from sklearn.linear_model import LinearRegression
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
 def unit_root_test(series, method = "ADF"):
@@ -379,3 +380,13 @@ def tune_sarima(y, d, D, season,p_range, q_range, P_range, Q_range, X=None):
     result_df.columns = ["(p, q)x(P, Q)", "AIC"] 
     result_df = result_df.sort_values("AIC", ascending = True) #Sort in ascending order, lower AIC is better
     return result_df
+
+def regression_detrend(series):
+    model = LinearRegression().fit(np.array(range(len(series))).reshape(-1, 1),series)
+# Make predictions
+    y_pred = model.predict(np.array(range(len(series))).reshape(-1, 1))
+    return np.array(series)-y_pred
+
+def forecast_trend(train_series, H):
+    model = LinearRegression().fit(np.array(range(len(train_series))).reshape(-1, 1),train_series)
+    return model.predict(np.array(range(len(train_series), len(train_series)+H)).reshape(-1, 1))
