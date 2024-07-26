@@ -7,15 +7,21 @@ from scipy.special import inv_boxcox
 from sklearn.linear_model import LinearRegression
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
-def unit_root_test(series, method = "ADF"):
+def unit_root_test(series, method = "ADF", n_lag = None):
     if method == "ADF":
-        adf = adfuller(series, autolag = 'AIC')[1]
+        if n_lag ==None:
+            adf = adfuller(series)[1]
+        else:
+            adf = adfuller(series, maxlag = n_lag)[1]        
         if adf < 0.05:
             return adf, print('ADF p-value: %f' % adf + " and data is stationary at 5% significance level")
         else:
             return adf, print('ADF p-value: %f' % adf + " and data is non-stationary at 5% significance level")
     elif method == "KPSS":
-        kps = kpss(series)[1]
+        if n_lag == None:
+            kps = kpss(series)[1]
+        else:
+            kps = kpss(series, nlags = n_lag)[1]
         if kps < 0.05:
             return kps, print('KPSS p-value: %f' % kps + " and data is non-stationary at 5% significance level")
         else:
