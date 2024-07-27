@@ -235,6 +235,24 @@ def cfe_abs(y_true, y_pred):
     cfe_t = np.cumsum([a - f for a, f in zip(y_true, y_pred)])
     return np.abs(cfe_t[-1])
 
+def wmape(y_true, y_pred):
+    """
+    Calculate Weighted Mean Absolute Percentage Error (WMAPE).
+    
+    Parameters:
+    y_true (array-like): Actual values.
+    y_pred (array-like): Forecasted values.
+    
+    Returns:
+    float: WMAPE value.
+    """
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
+    wmape_value = np.sum(np.abs(y_true - y_pred)) / np.sum(y_true)
+    
+    return wmape_value
+
 
 def box_cox_transform(x, shift=False, box_cox_lmda = None):
     if (box_cox_lmda == None):
