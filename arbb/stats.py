@@ -5,6 +5,7 @@ from numba import jit
 from scipy.stats import boxcox
 from scipy.special import inv_boxcox
 from sklearn.linear_model import LinearRegression
+from numba import jit
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
 def unit_root_test(series, method = "ADF", n_lag = None):
@@ -85,31 +86,56 @@ def rolling_median(arr, window):
     
     return result
     
+# def rolling_quantile(arr, window, q):
+#     """
+#     Calculate the rolling quantile of an array.
+    
+#     Parameters:
+#     arr (array-like): Input array
+#     q (float): Quantile, which must be between 
+#     0 and 1 inclusive
+#     window (int): Size of the rolling window
+    
+#     Returns:
+#     numpy.ndarray: Array of rolling quantiles, same length as input array
+#     """
+#     # Convert input to numpy array if it's not already
+#     arr = np.asarray(arr)
+    
+#     # Create output array filled with NaN
+#     result = np.full(arr.shape, np.nan)
+    
+#     # Calculate rolling quantile
+#     for i in range(window - 1, len(arr)):
+#         result[i] = np.quantile(arr[i - window + 1 : i + 1], q, method="lower")
+#         # result[i] = stats.mstats.mquantiles(arr[i - window + 1 : i + 1], prob=q, alphap=0.5, betap=0.5)[0]
+    
+#     return result
+
+@jit(nopython=True)
 def rolling_quantile(arr, window, q):
     """
     Calculate the rolling quantile of an array.
     
     Parameters:
     arr (array-like): Input array
-    q (float): Quantile, which must be between 
-    0 and 1 inclusive
+    q (float): Quantile, which must be between 0 and 1 inclusive
     window (int): Size of the rolling window
     
     Returns:
     numpy.ndarray: Array of rolling quantiles, same length as input array
     """
-    # Convert input to numpy array if it's not already
-    arr = np.asarray(arr)
     
-    # Create output array filled with NaN
     result = np.full(arr.shape, np.nan)
     
-    # Calculate rolling quantile
     for i in range(window - 1, len(arr)):
-        # result[i] = np.quantile(arr[i - window + 1 : i + 1], q, method="lower")
-        result[i] = stats.mstats.mquantiles(arr[i - window + 1 : i + 1], prob=q, alphap=0.5, betap=0.5)[0]
+        x = arr[i - window + 1 : i + 1]
+        n = len(x)
+        y = np.sort(x)
+        result[i] = (y[int(q * (n - 1))] + y[int(np.ceil(q * (n - 1)))]) * 0.5
     
     return result
+
 
 
 def Kfold_target(train, test, cat_var, target_col, encoded_colname, split_num):
