@@ -236,7 +236,7 @@ def cfe_abs(y_true, y_pred):
     return np.abs(cfe_t[-1])
 
 
-def box_cox_transform(x, shift, box_cox_lmda = None):
+def box_cox_transform(x, shift=False, box_cox_lmda = None):
     if (box_cox_lmda == None):
         if shift ==True:
             transformed_data, lmbda = boxcox((np.array(x)+1))
@@ -252,7 +252,7 @@ def box_cox_transform(x, shift, box_cox_lmda = None):
             transformed_data = boxcox(np.array(x), lmbda)
     return transformed_data, lmbda
 
-def back_box_cox_transform(y_pred, lmda, shift, box_cox_biasadj):
+def back_box_cox_transform(y_pred, lmda, shift=False, box_cox_biasadj=False):
     if (box_cox_biasadj==False):
         if shift == True:
             forecast = inv_boxcox(y_pred, lmda)-1
