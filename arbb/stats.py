@@ -63,6 +63,7 @@ def fourier_terms(start, stop, period, num_terms, df_index):
         df["cos_"+str(i-1)+"_"+str(period)] = np.cos(2 * np.pi * i * t / period)
     return df
 
+@jit(nopython=True)
 def rolling_median(arr, window):
     """
     Calculate the rolling median of an array.
