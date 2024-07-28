@@ -428,7 +428,6 @@ class lightGBM_forecaster:
         #                    else best_hyperparams[i] for i in best_hyperparams}
         return space_eval(param_space, best_hyperparams)
             
-    
 class xgboost_forecaster:
     def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
@@ -1542,7 +1541,8 @@ class HistGradientBoosting_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class lightGBM_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, cat_variables = None):
+    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, cat_variables = None,
+                 trend1 = False, trend2 = False, trend_type = "component"):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = LGBMRegressor
@@ -1552,10 +1552,27 @@ class lightGBM_bidirect_forecaster:
         self.difference1 = difference_1
         self.difference2 = difference_2
         self.lag_transform = lag_transform
+        self.trend1 = trend1
+        self.trend2 = trend2
+        self.trend_type = trend_type
         
     def data_prep(self, df):
         dfc = df.copy()
-        # self.raw_df = df.copy()
+
+        if (self.trend1 ==True):
+            self.len = len(dfc)
+            self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
+            
+            if (self.trend_type == "component"):
+                dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
+
+        if (self.trend2 ==True):
+            self.len = len(dfc)
+            self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
+            
+            if (self.trend_type == "component"):
+                dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
+
         if self.difference1 is not None:
             self.last_tar1 = df[self.target_col[0]].tolist()[-1]
             for i in range(1, self.difference1+1):
@@ -1605,6 +1622,12 @@ class lightGBM_bidirect_forecaster:
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
         tar2_predictions = []
+
+        if self.trend1 ==True:
+            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
+        if self.trend2 ==True:
+            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
         
         for i in range(n_ahead):
             if x_test is not None:
@@ -1659,6 +1682,15 @@ class lightGBM_bidirect_forecaster:
             forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
         else:
             forecast2 = np.array(tar2_predictions)
+
+        if (self.trend1 ==True)&(self.trend_type =="component"):
+            forecast1 = trend_pred1+forecast1
+
+        if (self.trend2 ==True)&(self.trend_type =="component"):
+            forecast2 = trend_pred2+forecast2
+
+        forecast1 = np.array([max(0, x) for x in forecast1])  
+        forecast2 = np.array([max(0, x) for x in forecast2])  
             
         return forecast1, forecast2
     
@@ -1712,17 +1744,19 @@ class lightGBM_bidirect_forecaster:
     
 class xgboost_bidirect_forecaster:
     def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_dict = None, drop_categ = None):
+                 cat_variables = None, trend1  = False, trend2= False, trend_type ="component"):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = XGBRegressor
         self.target_col = target_col
-        self.cat_var = cat_dict
         self.n_lag = n_lag
         self.difference1 = difference_1
         self.difference2 = difference_2
         self.lag_transform = lag_transform
-        self.drop_categ = drop_categ
+        self.cat_variables = cat_variables
+        self.trend1 = trend1
+        self.trend2 = trend2
+        self.trend_type = trend_type
     
         
     def data_prep(self, df):
@@ -1737,6 +1771,20 @@ class xgboost_bidirect_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
+
+            if (self.trend1 ==True):
+                self.len = len(dfc)
+                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
+
+            if (self.trend2 ==True):
+                self.len = len(dfc)
+                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
                     
             if self.difference1 is not None:
                 self.last_tar1 = df[self.target_col[0]].tolist()[-1]
@@ -1770,6 +1818,9 @@ class xgboost_bidirect_forecaster:
         else:
             model_xgb1 =self.model()
             model_xgb2 =self.model()
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_df = self.data_prep(df)
         self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
         self.model_xgb1 = model_xgb1.fit(self.X, self.y1, verbose = True)
@@ -1782,6 +1833,12 @@ class xgboost_bidirect_forecaster:
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
         tar2_predictions = []
+
+        if self.trend1 ==True:
+            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
+        if self.trend2 ==True:
+            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
         
         for i in range(n_ahead):
             if x_test is not None:
@@ -1828,10 +1885,24 @@ class xgboost_bidirect_forecaster:
             forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
         else:
             forecast2 = np.array(tar2_predictions)
+
+        if (self.trend1 ==True)&(self.trend_type =="component"):
+            forecast1 = trend_pred1+forecast1
+
+        if (self.trend2 ==True)&(self.trend_type =="component"):
+            forecast2 = trend_pred2+forecast2
+
+        forecast1 = np.array([max(0, x) for x in forecast1])  
+        forecast2 = np.array([max(0, x) for x in forecast2])  
+
         return forecast1, forecast2
 
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
+
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
@@ -1881,17 +1952,19 @@ class xgboost_bidirect_forecaster:
     
 class RandomForest_bidirect_forecaster:
     def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_dict = None, drop_categ = None):
+                 cat_variables = None, trend1  = False, trend2= False, trend_type ="component"):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = RandomForestRegressor
         self.target_col = target_col
-        self.cat_var = cat_dict
         self.n_lag = n_lag
         self.difference1 = difference_1
         self.difference2 = difference_2
         self.lag_transform = lag_transform
-        self.drop_categ = drop_categ
+        self.cat_variables = cat_variables
+        self.trend1 = trend1
+        self.trend2 = trend2
+        self.trend_type = trend_type
 
     def data_prep(self, df):
         dfc = df.copy()
@@ -1905,6 +1978,20 @@ class RandomForest_bidirect_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
+
+            if (self.trend1 ==True):
+                self.len = len(dfc)
+                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
+
+            if (self.trend2 ==True):
+                self.len = len(dfc)
+                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
                     
             if self.difference1 is not None:
                 self.last_tar1 = df[self.target_col[0]].tolist()[-1]
@@ -1938,6 +2025,9 @@ class RandomForest_bidirect_forecaster:
         else:
             model_rf1 =self.model()
             model_rf2 =self.model()
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_df = self.data_prep(df)
         self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
         self.model_rf1 = model_rf1.fit(self.X, self.y1)
@@ -1950,6 +2040,12 @@ class RandomForest_bidirect_forecaster:
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
         tar2_predictions = []
+
+        if self.trend1 ==True:
+            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
+        if self.trend2 ==True:
+            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
         
         for i in range(n_ahead):
             if x_test is not None:
@@ -1996,10 +2092,24 @@ class RandomForest_bidirect_forecaster:
             forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
         else:
             forecast2 = np.array(tar2_predictions)
+
+        if (self.trend1 ==True)&(self.trend_type =="component"):
+            forecast1 = trend_pred1+forecast1
+
+        if (self.trend2 ==True)&(self.trend_type =="component"):
+            forecast2 = trend_pred2+forecast2
+
+        forecast1 = np.array([max(0, x) for x in forecast1])  
+        forecast2 = np.array([max(0, x) for x in forecast2])  
+
         return forecast1, forecast2
 
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
+
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
@@ -2048,7 +2158,8 @@ class RandomForest_bidirect_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class cat_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, cat_variables = None):
+    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, cat_variables = None,
+                 trend1  = False, trend2= False, trend_type ="component"):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = CatBoostRegressor
@@ -2058,10 +2169,27 @@ class cat_bidirect_forecaster:
         self.difference1 = difference_1
         self.difference2 = difference_2
         self.lag_transform = lag_transform
+        self.trend1 = trend1
+        self.trend2 = trend2
+        self.trend_type = trend_type
         
     def data_prep(self, df):
         dfc = df.copy()
         # self.raw_df = df.copy()
+        if (self.trend1 ==True):
+            self.len = len(dfc)
+            self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
+            
+            if (self.trend_type == "component"):
+                dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
+
+        if (self.trend2 ==True):
+            self.len = len(dfc)
+            self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
+            
+            if (self.trend_type == "component"):
+                dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
+
         if self.difference1 is not None:
             self.last_tar1 = df[self.target_col[0]].tolist()[-1]
             for i in range(1, self.difference1+1):
@@ -2112,6 +2240,12 @@ class cat_bidirect_forecaster:
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
         tar2_predictions = []
+
+        if self.trend1 ==True:
+            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
+        if self.trend2 ==True:
+            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
         
         for i in range(n_ahead):
             if x_test is not None:
@@ -2155,6 +2289,15 @@ class cat_bidirect_forecaster:
             forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
         else:
             forecast2 = np.array(tar2_predictions)
+
+        if (self.trend1 ==True)&(self.trend_type =="component"):
+            forecast1 = trend_pred1+forecast1
+
+        if (self.trend2 ==True)&(self.trend_type =="component"):
+            forecast2 = trend_pred2+forecast2
+
+        forecast1 = np.array([max(0, x) for x in forecast1])  
+        forecast2 = np.array([max(0, x) for x in forecast2])  
             
         return forecast1, forecast2
 
@@ -2211,17 +2354,19 @@ class cat_bidirect_forecaster:
     
 class Cubist_bidirect_forecaster:
     def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_dict = None, drop_categ = None):
+                 cat_variables = None, trend1  = False, trend2= False, trend_type ="component"):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = Cubist
         self.target_col = target_col
-        self.cat_var = cat_dict
         self.n_lag = n_lag
         self.difference1 = difference_1
         self.difference2 = difference_2
         self.lag_transform = lag_transform
-        self.drop_categ = drop_categ
+        self.cat_variables = cat_variables
+        self.trend1 = trend1
+        self.trend2 = trend2
+        self.trend_type = trend_type
 
     def data_prep(self, df):
         dfc = df.copy()
@@ -2235,6 +2380,20 @@ class Cubist_bidirect_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
+
+            if (self.trend1 ==True):
+                self.len = len(dfc)
+                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
+
+            if (self.trend2 ==True):
+                self.len = len(dfc)
+                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
                     
             if self.difference1 is not None:
                 self.last_tar1 = df[self.target_col[0]].tolist()[-1]
@@ -2268,6 +2427,9 @@ class Cubist_bidirect_forecaster:
         else:
             model_cub1 =self.model()
             model_cub2 =self.model()
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_df = self.data_prep(df)
         self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
         self.model_cub1 = model_cub1.fit(self.X, self.y1)
@@ -2280,6 +2442,12 @@ class Cubist_bidirect_forecaster:
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
         tar2_predictions = []
+
+        if self.trend1 ==True:
+            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
+        if self.trend2 ==True:
+            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
         
         for i in range(n_ahead):
             if x_test is not None:
@@ -2326,10 +2494,25 @@ class Cubist_bidirect_forecaster:
             forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
         else:
             forecast2 = np.array(tar2_predictions)
+
+        if (self.trend1 ==True)&(self.trend_type =="component"):
+            forecast1 = trend_pred1+forecast1
+
+        if (self.trend2 ==True)&(self.trend_type =="component"):
+            forecast2 = trend_pred2+forecast2
+
+        forecast1 = np.array([max(0, x) for x in forecast1])  
+        forecast2 = np.array([max(0, x) for x in forecast2])  
+
         return forecast1, forecast2
 
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
+
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
@@ -2379,17 +2562,19 @@ class Cubist_bidirect_forecaster:
 
 class AdaBoost_bidirect_forecaster:
     def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_dict = None, drop_categ = None):
+                 cat_variables = None,  trend1  = False, trend2= False, trend_type ="component"):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = AdaBoostRegressor
         self.target_col = target_col
-        self.cat_var = cat_dict
         self.n_lag = n_lag
         self.difference1 = difference_1
         self.difference2 = difference_2
         self.lag_transform = lag_transform
-        self.drop_categ = drop_categ
+        self.cat_variables=cat_variables
+        self.trend1 = trend1
+        self.trend2 = trend2
+        self.trend_type = trend_type
 
     def data_prep(self, df):
         dfc = df.copy()
@@ -2403,6 +2588,20 @@ class AdaBoost_bidirect_forecaster:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
+
+            if (self.trend1 ==True):
+                self.len = len(dfc)
+                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
+
+            if (self.trend2 ==True):
+                self.len = len(dfc)
+                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
+                
+                if (self.trend_type == "component"):
+                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
                     
             if self.difference1 is not None:
                 self.last_tar1 = df[self.target_col[0]].tolist()[-1]
@@ -2436,6 +2635,9 @@ class AdaBoost_bidirect_forecaster:
         else:
             model_ada1 =self.model()
             model_ada2 =self.model()
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         model_df = self.data_prep(df)
         self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
         self.model_ada1 = model_ada1.fit(self.X, self.y1)
@@ -2448,6 +2650,12 @@ class AdaBoost_bidirect_forecaster:
         tar2_lags = self.y2.tolist()
         tar1_predictions = []
         tar2_predictions = []
+
+        if self.trend1 ==True:
+            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
+        if self.trend2 ==True:
+            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
         
         for i in range(n_ahead):
             if x_test is not None:
@@ -2494,10 +2702,23 @@ class AdaBoost_bidirect_forecaster:
             forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
         else:
             forecast2 = np.array(tar2_predictions)
+
+        if (self.trend1 ==True)&(self.trend_type =="component"):
+            forecast1 = trend_pred1+forecast1
+
+        if (self.trend2 ==True)&(self.trend_type =="component"):
+            forecast2 = trend_pred2+forecast2
+
+        forecast1 = np.array([max(0, x) for x in forecast1])  
+        forecast2 = np.array([max(0, x) for x in forecast2])  
+
         return forecast1, forecast2
 
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
