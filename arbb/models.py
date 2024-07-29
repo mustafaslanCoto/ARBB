@@ -395,7 +395,7 @@ class lightGBM_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        self.metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {m.__name__: [] for m in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -649,7 +649,7 @@ class xgboost_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        self.metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {m.__name__: [] for m in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -908,7 +908,7 @@ class RandomForest_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        self.metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {m.__name__: [] for m in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -1167,7 +1167,7 @@ class AdaBoost_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        self.metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {m.__name__: [] for m in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -1679,10 +1679,10 @@ class HistGradientBoosting_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        self.metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {m.__name__: [] for m in metrics}
         # self.cv_df = pd.DataFrame()
 
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+        for train_index, test_index in tscv.split(df):
             train, test = df.iloc[train_index], df.iloc[test_index]
             x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
             
@@ -1928,7 +1928,7 @@ class lightGBM_bidirect_forecaster:
     def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        self.metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {m.__name__: [] for m in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
