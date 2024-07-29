@@ -154,7 +154,7 @@ class cat_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
 
         for train_index, test_index in tscv.split(df):
             train, test = df.iloc[train_index], df.iloc[test_index]
@@ -174,9 +174,9 @@ class cat_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -395,7 +395,7 @@ class lightGBM_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -416,13 +416,13 @@ class lightGBM_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb.feature_name_, "importance":self.model_lgb.feature_importances_}).sort_values(by = "importance", ascending = False)
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
@@ -649,7 +649,7 @@ class xgboost_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -670,13 +670,13 @@ class xgboost_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             cv_tr_df = pd.DataFrame({"feat_name":self.model_xgb.feature_names_in_, "importance":self.model_xgb.feature_importances_}).sort_values(by = "importance", ascending = False)
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -908,7 +908,7 @@ class RandomForest_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -929,13 +929,13 @@ class RandomForest_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             cv_tr_df = pd.DataFrame({"feat_name":self.model_rf.feature_names_in_, "importance":self.model_rf.feature_importances_}).sort_values(by = "importance", ascending = False)
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
@@ -1167,7 +1167,7 @@ class AdaBoost_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -1188,13 +1188,13 @@ class AdaBoost_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             cv_tr_df = pd.DataFrame({"feat_name":self.model_ada.feature_names_in_, "importance":self.model_ada.feature_importances_}).sort_values(by = "importance", ascending = False)
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -1427,7 +1427,7 @@ class Cubist_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         # self.cv_df = pd.DataFrame()
 
         for train_index, test_index in tscv.split(df):
@@ -1448,13 +1448,13 @@ class Cubist_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             # cv_tr_df = pd.DataFrame({"feat_name":self.model_ada.feature_names_in_, "importance":self.model_ada.feature_importances_}).sort_values(by = "importance", ascending = False)
             # cv_tr_df["fold"] = i
             # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -1679,7 +1679,7 @@ class HistGradientBoosting_forecaster:
     def cv(self, df, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         # self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -1700,13 +1700,13 @@ class HistGradientBoosting_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             # cv_tr_df = pd.DataFrame({"feat_name":self.model_hist.feature_names_in_, "importance":self.model_hist.feature_importances_}).sort_values(by = "importance", ascending = False)
             # cv_tr_df["fold"] = i
             # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -1928,7 +1928,7 @@ class lightGBM_bidirect_forecaster:
     def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -1949,7 +1949,7 @@ class lightGBM_bidirect_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             if forecast_idx == 0:
                 cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb1.feature_name_, "importance":self.model_lgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
@@ -1958,7 +1958,7 @@ class lightGBM_bidirect_forecaster:
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
@@ -2168,7 +2168,7 @@ class xgboost_bidirect_forecaster:
     def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -2189,7 +2189,7 @@ class xgboost_bidirect_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             if forecast_idx == 0:
                 cv_tr_df = pd.DataFrame({"feat_name":self.model_xgb1.feature_names_in_, "importance":self.model_xgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
@@ -2198,7 +2198,7 @@ class xgboost_bidirect_forecaster:
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -2412,7 +2412,7 @@ class RandomForest_bidirect_forecaster:
     def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -2433,7 +2433,7 @@ class RandomForest_bidirect_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             if forecast_idx == 0:
                 cv_tr_df = pd.DataFrame({"feat_name":self.model_rf1.feature_names_in_, "importance":self.model_rf1.feature_importances_}).sort_values(by = "importance", ascending = False)
@@ -2442,7 +2442,7 @@ class RandomForest_bidirect_forecaster:
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
@@ -2645,7 +2645,7 @@ class cat_bidirect_forecaster:
     def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         # self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -2666,7 +2666,7 @@ class cat_bidirect_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             # if forecast_idx == 0:
             #     cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb1.feature_name_, "importance":self.model_lgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
@@ -2675,7 +2675,7 @@ class cat_bidirect_forecaster:
             # cv_tr_df["fold"] = i
             # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -2887,7 +2887,7 @@ class Cubist_bidirect_forecaster:
     def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         # self.cv_df = pd.DataFrame()
 
         for train_index, test_index in tscv.split(df):
@@ -2908,7 +2908,7 @@ class Cubist_bidirect_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             # if forecast_idx == 0:
             #     cv_tr_df = pd.DataFrame({"feat_name":self.model_rf1.feature_names_in_, "importance":self.model_rf1.feature_importances_}).sort_values(by = "importance", ascending = False)
@@ -2917,7 +2917,7 @@ class Cubist_bidirect_forecaster:
             # cv_tr_df["fold"] = i
             # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
@@ -3132,7 +3132,7 @@ class AdaBoost_bidirect_forecaster:
     def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
-        metrics_dict = {i.__name__:[] for i in metrics}
+        self.metrics_dict = {i.__name__:[] for i in metrics}
         self.cv_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
@@ -3153,7 +3153,7 @@ class AdaBoost_bidirect_forecaster:
                     eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
                 else:
                     eval = m(y_test, bb_forecast)
-                metrics_dict[m.__name__].append(eval)
+                self.metrics_dict[m.__name__].append(eval)
 
             if forecast_idx == 0:
                 cv_tr_df = pd.DataFrame({"feat_name":self.model_ada1.feature_names_in_, "importance":self.model_ada1.feature_importances_}).sort_values(by = "importance", ascending = False)
@@ -3162,7 +3162,7 @@ class AdaBoost_bidirect_forecaster:
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
 
-        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
