@@ -240,6 +240,7 @@ class cat_forecaster:
                         max_evals = eval_num,
                         trials = trials)
         # best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
+        
         return space_eval(param_space, best_hyperparams)
 
 class lightGBM_forecaster:
