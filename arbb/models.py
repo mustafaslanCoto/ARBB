@@ -151,6 +151,34 @@ class cat_forecaster:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
     
+    def cv(self, df, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+
+        for train_index, test_index in tscv.split(df):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num = 100):
 
@@ -362,6 +390,40 @@ class lightGBM_forecaster:
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
+    
+    def cv(self, df, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb.feature_name_, "importance":self.model_lgb.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
     def tune_model(self, df, cv_split, test_size, param_space,eval_metric, eval_num = 100):
         # if 'lags' not in param_space:
@@ -582,6 +644,40 @@ class xgboost_forecaster:
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
+    
+    def cv(self, df, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            cv_tr_df = pd.DataFrame({"feat_name":self.model_xgb.feature_names_in_, "importance":self.model_xgb.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
@@ -807,7 +903,40 @@ class RandomForest_forecaster:
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
+    
+    def cv(self, df, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
 
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            cv_tr_df = pd.DataFrame({"feat_name":self.model_rf.feature_names_in_, "importance":self.model_rf.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         if self.cat_variables is not None:
@@ -1033,6 +1162,40 @@ class AdaBoost_forecaster:
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
+    
+    def cv(self, df, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            cv_tr_df = pd.DataFrame({"feat_name":self.model_ada.feature_names_in_, "importance":self.model_ada.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
@@ -1260,7 +1423,40 @@ class Cubist_forecaster:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
 
-    
+    def cv(self, df, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        # self.cv_df = pd.DataFrame()
+
+        for train_index, test_index in tscv.split(df):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            # cv_tr_df = pd.DataFrame({"feat_name":self.model_ada.feature_names_in_, "importance":self.model_ada.feature_importances_}).sort_values(by = "importance", ascending = False)
+            # cv_tr_df["fold"] = i
+            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
+
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
@@ -1479,6 +1675,40 @@ class HistGradientBoosting_forecaster:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
         return forecasts
 
+    def cv(self, df, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        # self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            # cv_tr_df = pd.DataFrame({"feat_name":self.model_hist.feature_names_in_, "importance":self.model_hist.feature_importances_}).sort_values(by = "importance", ascending = False)
+            # cv_tr_df["fold"] = i
+            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
+
     
     def tune_model(self, df, cv_split, test_size, param_space, eval_metric, eval_num= 100):
         if self.cat_variables is not None:
@@ -1694,6 +1924,43 @@ class lightGBM_bidirect_forecaster:
             
         return forecast1, forecast2
     
+    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            if forecast_idx == 0:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb1.feature_name_, "importance":self.model_lgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
+            else:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb2.feature_name_, "importance":self.model_lgb2.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
+    
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
@@ -1896,6 +2163,43 @@ class xgboost_bidirect_forecaster:
         forecast2 = np.array([max(0, x) for x in forecast2])  
 
         return forecast1, forecast2
+    
+    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            if forecast_idx == 0:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_xgb1.feature_names_in_, "importance":self.model_xgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
+            else:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_xgb2.feature_names_in_, "importance":self.model_xgb2.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
@@ -2103,7 +2407,43 @@ class RandomForest_bidirect_forecaster:
         forecast2 = np.array([max(0, x) for x in forecast2])  
 
         return forecast1, forecast2
+    
+    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
 
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            if forecast_idx == 0:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_rf1.feature_names_in_, "importance":self.model_rf1.feature_importances_}).sort_values(by = "importance", ascending = False)
+            else:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_rf2.feature_names_in_, "importance":self.model_rf2.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
 
@@ -2300,6 +2640,43 @@ class cat_bidirect_forecaster:
         forecast2 = np.array([max(0, x) for x in forecast2])  
             
         return forecast1, forecast2
+    
+    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        # self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            # if forecast_idx == 0:
+            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb1.feature_name_, "importance":self.model_lgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
+            # else:
+            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb2.feature_name_, "importance":self.model_lgb2.feature_importances_}).sort_values(by = "importance", ascending = False)
+            # cv_tr_df["fold"] = i
+            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
             
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
@@ -2505,6 +2882,43 @@ class Cubist_bidirect_forecaster:
         forecast2 = np.array([max(0, x) for x in forecast2])  
 
         return forecast1, forecast2
+    
+    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        # self.cv_df = pd.DataFrame()
+
+        for train_index, test_index in tscv.split(df):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            # if forecast_idx == 0:
+            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_rf1.feature_names_in_, "importance":self.model_rf1.feature_importances_}).sort_values(by = "importance", ascending = False)
+            # else:
+            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_rf2.feature_names_in_, "importance":self.model_rf2.feature_importances_}).sort_values(by = "importance", ascending = False)
+            # cv_tr_df["fold"] = i
+            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
@@ -2713,6 +3127,43 @@ class AdaBoost_bidirect_forecaster:
         forecast2 = np.array([max(0, x) for x in forecast2])  
 
         return forecast1, forecast2
+    
+    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
+        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        
+        metrics_dict = {i.__name__:[] for i in metrics}
+        self.cv_df = pd.DataFrame()
+
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
+            
+            if params is not None:
+                self.fit(train, param = params)
+            else:
+                self.fit(train)
+            
+            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
+
+            for m in metrics:
+                if m.__name__== 'mean_squared_error':
+                    eval = m(y_test, bb_forecast, squared=False)
+                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+                else:
+                    eval = m(y_test, bb_forecast)
+                metrics_dict[m.__name__].append(eval)
+
+            if forecast_idx == 0:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_ada1.feature_names_in_, "importance":self.model_ada1.feature_importances_}).sort_values(by = "importance", ascending = False)
+            else:
+                cv_tr_df = pd.DataFrame({"feat_name":self.model_ada2.feature_names_in_, "importance":self.model_ada2.feature_importances_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df["fold"] = i
+            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+
+        overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]  
+        
+        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
     def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
