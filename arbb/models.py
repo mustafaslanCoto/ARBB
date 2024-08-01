@@ -575,7 +575,7 @@ class lightGBM_forecaster:
         idx = train[-H:].index # get index of last H values of train data to iterate over H horizons to forecast all values of 
         preds = []
         for i in range(H):
-            train_direct= train[:(idx[i]+timedelta(-1))] # set new train data to forecast H step further
+            train_direct= train[:idx[i]] # set new train data to forecast H step further
             test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data 
             if param is not None:
                 self.fit(train_direct, param)
@@ -1027,7 +1027,7 @@ class xgboost_forecaster:
         idx = train[-H:].index # get index of last H values of train data to iterate over H horizons to forecast all values of 
         preds = []
         for i in range(H):
-            train_direct= train[:(idx[i]+timedelta(-1))] # set new train data to forecast H step further
+            train_direct= train[:idx[i]] # set new train data to forecast H step further
             test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data 
             if param is not None:
                 self.fit(train_direct, param)
@@ -1478,8 +1478,8 @@ class RandomForest_forecaster:
         idx = train[-H:].index # get index of last H values of train data to iterate over H horizons to forecast all values of 
         preds = []
         for i in range(H):
-            train_direct= train[:(idx[i]+timedelta(-1))] # set new train data to forecast H step further
-            test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data 
+            train_direct= train[:idx[i]] # set new train data to forecast H step further
+            test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data
             if param is not None:
                 self.fit(train_direct, param)
             else:
@@ -1933,8 +1933,8 @@ class AdaBoost_forecaster:
         idx = train[-H:].index # get index of last H values of train data to iterate over H horizons to forecast all values of 
         preds = []
         for i in range(H):
-            train_direct= train[:(idx[i]+timedelta(-1))] # set new train data to forecast H step further
-            test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data 
+            train_direct= train[:idx[i]] # set new train data to forecast H step further
+            test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data
             if param is not None:
                 self.fit(train_direct, param)
             else:
@@ -2386,7 +2386,7 @@ class Cubist_forecaster:
         idx = train[-H:].index # get index of last H values of train data to iterate over H horizons to forecast all values of 
         preds = []
         for i in range(H):
-            train_direct= train[:(idx[i]+timedelta(-1))] # set new train data to forecast H step further
+            train_direct= train[:idx[i]] # set new train data to forecast H step further
             test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data 
             if param is not None:
                 self.fit(train_direct, param)
@@ -2822,7 +2822,7 @@ class HistGradientBoosting_forecaster:
         idx = train[-H:].index # get index of last H values of train data to iterate over H horizons to forecast all values of 
         preds = []
         for i in range(H):
-            train_direct= train[:(idx[i]+timedelta(-1))] # set new train data to forecast H step further
+            train_direct= train[:idx[i]] # set new train data to forecast H step further
             test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data 
             if param is not None:
                 self.fit(train_direct, param)
@@ -3254,7 +3254,7 @@ class LR_forecaster:
         idx = train[-H:].index # get index of last H values of train data to iterate over H horizons to forecast all values of 
         preds = []
         for i in range(H):
-            train_direct= train[:(idx[i]+timedelta(-1))] # set new train data to forecast H step further
+            train_direct= train[:idx[i]] # set new train data to forecast H step further
             test_direct = test.loc[idx[i]+timedelta(H)] # subset test row wich corresponds to H step further from the last value of train data 
             self.fit(train_direct)
             forecast = self.direct_forecast(H, x_test=test_direct)
