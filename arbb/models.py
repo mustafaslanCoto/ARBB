@@ -3023,7 +3023,7 @@ class LR_forecaster:
         model_train = self.data_prep(df)
         
         self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-        self.model_LR = model.fit(np.array(self.X), self.y)
+        self.model_LR = self.model.fit(np.array(self.X), self.y)
 
     def forecast(self, n_ahead, x_test = None):
         if x_test is not None:
