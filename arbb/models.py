@@ -663,24 +663,27 @@ class lightGBM_forecaster:
                 # self.data_prep(df)
                 param_model = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
             else:
-                param_model = params  
-            # model =self.model(**params)   
-            metric = []
+                param_model = params 
+            # metric = []
+            actuals = []
+            predictions = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                x_test = test.iloc[:, 1:]
 
-                yhat= self.multiple_direct_forecats(train, x_test, test_size, param_model)
 
-                if eval_metric.__name__== 'mean_squared_error':
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat)
+                actuals += test[self.target_col].tolist()
+                predictions += list(self.multiple_direct_forecats(train, x_test, test_size, param_model))
+
+            if eval_metric.__name__== 'mean_squared_error':
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), squared=False)
+            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), np.array(train[self.target_col]))
+            else:
+                accuracy = eval_metric(np.array(actuals), np.array(predictions))
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+            # metric.append(accuracy)
+            score = np.mean(accuracy)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -1121,22 +1124,26 @@ class xgboost_forecaster:
             else:
                 param_model = params  
             # model =self.model(**params)   
-            metric = []
+            # metric = []
+            actuals = []
+            predictions = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                x_test = test.iloc[:, 1:]
 
-                yhat= self.multiple_direct_forecats(train, x_test, test_size, param_model)
 
-                if eval_metric.__name__== 'mean_squared_error':
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat)
+                actuals += test[self.target_col].tolist()
+                predictions += list(self.multiple_direct_forecats(train, x_test, test_size, param_model))
+
+            if eval_metric.__name__== 'mean_squared_error':
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), squared=False)
+            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), np.array(train[self.target_col]))
+            else:
+                accuracy = eval_metric(np.array(actuals), np.array(predictions))
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+            # metric.append(accuracy)
+            score = np.mean(accuracy)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -1571,23 +1578,26 @@ class RandomForest_forecaster:
                 param_model = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
             else:
                 param_model = params  
-            # model =self.model(**params)   
-            metric = []
+            # metric = []
+            actuals = []
+            predictions = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                x_test = test.iloc[:, 1:]
 
-                yhat= self.multiple_direct_forecats(train, x_test, test_size, param_model)
 
-                if eval_metric.__name__== 'mean_squared_error':
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat)
+                actuals += test[self.target_col].tolist()
+                predictions += list(self.multiple_direct_forecats(train, x_test, test_size, param_model))
+
+            if eval_metric.__name__== 'mean_squared_error':
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), squared=False)
+            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), np.array(train[self.target_col]))
+            else:
+                accuracy = eval_metric(np.array(actuals), np.array(predictions))
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+            # metric.append(accuracy)
+            score = np.mean(accuracy)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -2026,23 +2036,26 @@ class AdaBoost_forecaster:
                 param_model = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
             else:
                 param_model = params  
-            # model =self.model(**params)   
-            metric = []
+            # metric = []
+            actuals = []
+            predictions = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                x_test = test.iloc[:, 1:]
 
-                yhat= self.multiple_direct_forecats(train, x_test, test_size, param_model)
 
-                if eval_metric.__name__== 'mean_squared_error':
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat)
+                actuals += test[self.target_col].tolist()
+                predictions += list(self.multiple_direct_forecats(train, x_test, test_size, param_model))
+
+            if eval_metric.__name__== 'mean_squared_error':
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), squared=False)
+            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), np.array(train[self.target_col]))
+            else:
+                accuracy = eval_metric(np.array(actuals), np.array(predictions))
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+            # metric.append(accuracy)
+            score = np.mean(accuracy)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -2475,23 +2488,26 @@ class Cubist_forecaster:
                 param_model = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
             else:
                 param_model = params  
-            # model =self.model(**params)   
-            metric = []
+            # metric = []
+            actuals = []
+            predictions = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                x_test = test.iloc[:, 1:]
 
-                yhat= self.multiple_direct_forecats(train, x_test, test_size, param_model)
 
-                if eval_metric.__name__== 'mean_squared_error':
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat)
+                actuals += test[self.target_col].tolist()
+                predictions += list(self.multiple_direct_forecats(train, x_test, test_size, param_model))
+
+            if eval_metric.__name__== 'mean_squared_error':
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), squared=False)
+            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), np.array(train[self.target_col]))
+            else:
+                accuracy = eval_metric(np.array(actuals), np.array(predictions))
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+            # metric.append(accuracy)
+            score = np.mean(accuracy)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -2912,22 +2928,26 @@ class HistGradientBoosting_forecaster:
             else:
                 param_model = params  
             # model =self.model(**params)   
-            metric = []
+            # metric = []
+            actuals = []
+            predictions = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                x_test = test.iloc[:, 1:]
 
-                yhat= self.multiple_direct_forecats(train, x_test, test_size, param_model)
 
-                if eval_metric.__name__== 'mean_squared_error':
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat)
+                actuals += test[self.target_col].tolist()
+                predictions += list(self.multiple_direct_forecats(train, x_test, test_size, param_model))
+
+            if eval_metric.__name__== 'mean_squared_error':
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), squared=False)
+            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), np.array(train[self.target_col]))
+            else:
+                accuracy = eval_metric(np.array(actuals), np.array(predictions))
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+            # metric.append(accuracy)
+            score = np.mean(accuracy)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
@@ -3333,26 +3353,26 @@ class LR_forecaster:
                 if ('box_cox_biasadj' in params):
                     self.biasadj = params["box_cox_biasadj"]
                 
-            metric = []
+            # metric = []
+            actuals = []
+            predictions = []
             for train_index, test_index in tscv.split(df):
                 train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.iloc[:, 1:], np.array(test[self.target_col])
+                x_test = test.iloc[:, 1:]
 
-                yhat= self.multiple_direct_forecats(train, x_test, test_size)
-                # model_train = self.data_prep(train)
-                # self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
 
-                # self.model_LR = self.model.fit(np.array(self.X), self.y)
-                # yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                if eval_metric.__name__== 'mean_squared_error':
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-                elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat)
+                actuals += test[self.target_col].tolist()
+                predictions += list(self.multiple_direct_forecats(train, x_test, test_size, param_model))
+
+            if eval_metric.__name__== 'mean_squared_error':
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), squared=False)
+            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                accuracy = eval_metric(np.array(actuals), np.array(predictions), np.array(train[self.target_col]))
+            else:
+                accuracy = eval_metric(np.array(actuals), np.array(predictions))
 #                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+            # metric.append(accuracy)
+            score = np.mean(accuracy)
 
             print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
