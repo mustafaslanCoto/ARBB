@@ -508,6 +508,8 @@ class lightGBM_forecaster:
                             accuracy = eval_metric(y_test, yhat)
                     metric.append(accuracy)
             if append_horizons is True:
+                forecasts = np.array(forecasts)
+                actuals = np.array(actuals)
                 if eval_metric.__name__== 'mean_squared_error':
                     if opt_horizon is not None:
                         accuracy = eval_metric(actuals[-opt_horizon:], forecasts[-opt_horizon:], squared=False)
@@ -1000,6 +1002,8 @@ class xgboost_forecaster:
                             accuracy = eval_metric(y_test, yhat)
                     metric.append(accuracy)
             if append_horizons is True:
+                forecasts = np.array(forecasts)
+                actuals = np.array(actuals)
                 if eval_metric.__name__== 'mean_squared_error':
                     if opt_horizon is not None:
                         accuracy = eval_metric(actuals[-opt_horizon:], forecasts[-opt_horizon:], squared=False)
@@ -1487,6 +1491,8 @@ class RandomForest_forecaster:
                             accuracy = eval_metric(y_test, yhat)
                     metric.append(accuracy)
             if append_horizons is True:
+                forecasts = np.array(forecasts)
+                actuals = np.array(actuals)
                 if eval_metric.__name__== 'mean_squared_error':
                     if opt_horizon is not None:
                         accuracy = eval_metric(actuals[-opt_horizon:], forecasts[-opt_horizon:], squared=False)
@@ -1974,6 +1980,8 @@ class AdaBoost_forecaster:
                             accuracy = eval_metric(y_test, yhat)
                     metric.append(accuracy)
             if append_horizons is True:
+                forecasts = np.array(forecasts)
+                actuals = np.array(actuals)
                 if eval_metric.__name__== 'mean_squared_error':
                     if opt_horizon is not None:
                         accuracy = eval_metric(actuals[-opt_horizon:], forecasts[-opt_horizon:], squared=False)
@@ -2460,6 +2468,8 @@ class Cubist_forecaster:
                             accuracy = eval_metric(y_test, yhat)
                     metric.append(accuracy)
             if append_horizons is True:
+                forecasts = np.array(forecasts)
+                actuals = np.array(actuals)
                 if eval_metric.__name__== 'mean_squared_error':
                     if opt_horizon is not None:
                         accuracy = eval_metric(actuals[-opt_horizon:], forecasts[-opt_horizon:], squared=False)
@@ -2930,6 +2940,8 @@ class HistGradientBoosting_forecaster:
                             accuracy = eval_metric(y_test, yhat)
                     metric.append(accuracy)
             if append_horizons is True:
+                forecasts = np.array(forecasts)
+                actuals = np.array(actuals)
                 if eval_metric.__name__== 'mean_squared_error':
                     if opt_horizon is not None:
                         accuracy = eval_metric(actuals[-opt_horizon:], forecasts[-opt_horizon:], squared=False)
