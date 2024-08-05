@@ -294,12 +294,13 @@ def back_box_cox_transform(y_pred, lmda, shift=False, box_cox_biasadj=False):
 
 def undiff_ts(original_data, differenced_data, difference_number):
     
+    undiff_data = np.array(differenced_data)
     if difference_number>1:
-        undiff_data = np.array(differenced_data)
         for i in range(difference_number-1, 0, -1):
             undiff_data = np.diff(original_data, i)[-1]+np.cumsum(undiff_data)
     
     return original_data[-1]+np.cumsum(undiff_data)
+
 def seasonal_diff(data, seasonal_length):
     orig_data = list(np.repeat(np.nan, seasonal_length))+[data[i] - data[i - seasonal_length] for i in range(seasonal_length, len(data))]
     return np.array(orig_data)
