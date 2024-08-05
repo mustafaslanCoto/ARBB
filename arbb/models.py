@@ -53,6 +53,7 @@ class cat_forecaster:
             if self.difference is not None:
                 dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
             if self.season_diff is not None:
+                self.orig_d = dfc[self.target_col].tolist()
                 dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
         if self.cat_var is not None:
@@ -140,7 +141,7 @@ class cat_forecaster:
         
         forecasts = np.array(predictions)
         if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
 
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
@@ -297,6 +298,7 @@ class lightGBM_forecaster:
             if self.difference is not None:
                 dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
             if self.season_diff is not None:
+                self.orig_d = dfc[self.target_col].tolist()
                 dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
         if self.cat_var is not None:
@@ -394,7 +396,7 @@ class lightGBM_forecaster:
 
         forecasts = np.array(predictions)
         if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
 
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
@@ -791,6 +793,7 @@ class xgboost_forecaster:
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
+                    self.orig_d = dfc[self.target_col].tolist()
                     dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
@@ -887,7 +890,7 @@ class xgboost_forecaster:
 
         forecasts = np.array(predictions)
         if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
 
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
@@ -1289,6 +1292,7 @@ class RandomForest_forecaster:
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
+                    self.orig_d = dfc[self.target_col].tolist()
                     dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
@@ -1381,7 +1385,7 @@ class RandomForest_forecaster:
 
         forecasts = np.array(predictions)
         if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
 
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
@@ -1781,6 +1785,7 @@ class AdaBoost_forecaster:
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
+                    self.orig_d = dfc[self.target_col].tolist()
                     dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
@@ -1872,7 +1877,7 @@ class AdaBoost_forecaster:
 
         forecasts = np.array(predictions)
         if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
 
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
@@ -2273,6 +2278,7 @@ class Cubist_forecaster:
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
+                    self.orig_d = dfc[self.target_col].tolist()
                     dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
@@ -2364,7 +2370,7 @@ class Cubist_forecaster:
 
         forecasts = np.array(predictions)
         if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
 
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
@@ -2758,6 +2764,7 @@ class HistGradientBoosting_forecaster:
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
+                    self.orig_d = dfc[self.target_col].tolist()
                     dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
@@ -2843,7 +2850,7 @@ class HistGradientBoosting_forecaster:
 
         forecasts = np.array(predictions)
         if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
 
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
