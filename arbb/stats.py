@@ -292,6 +292,26 @@ def back_box_cox_transform(y_pred, lmda, shift=False, box_cox_biasadj=False):
                 forecast = ((lmda*y_pred+1)**(1/lmda))*(1+((1-lmda)*pred_var)/(2*((lmda*y_pred+1)**2)))
     return forecast
 
+def undiff_ts(original_data, differenced_data, difference_number):
+    
+    if difference_number>1:
+        undiff_data = np.array(differenced_data)
+        for i in range(difference_number-1, 0, -1):
+            undiff_data = np.diff(original_data, i)[-1]+np.cumsum(undiff_data)
+    
+    return original_data[-1]+np.cumsum(undiff_data)
+def seasonal_diff(data, seasonal_length):
+    orig_data = list(np.repeat(np.nan, seasonal_length))+[data[i] - data[i - seasonal_length] for i in range(seasonal_length, len(data))]
+    return np.array(orig_data)
+
+# invert difference
+def invert_seasonal_diff(orig_data, diff_data, seasonal_length):
+    conc_data = list(orig_data[-seasonal_length:]) + list(diff_data)
+    for i in range(len(conc_data)-seasonal_length):
+        conc_data[i+seasonal_length] = conc_data[i]+conc_data[i+seasonal_length]
+        
+    return np.array(conc_data[-len(diff_data):])
+
 
 def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
     from sklearn.model_selection import TimeSeriesSplit

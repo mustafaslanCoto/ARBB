@@ -10,11 +10,12 @@ from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, HistGradi
 from catboost import CatBoostRegressor
 from cubist import Cubist
 from sklearn.linear_model import LinearRegression
-from arbb.stats import box_cox_transform, back_box_cox_transform
+from arbb.stats import box_cox_transform, back_box_cox_transform, undiff_ts, seasonal_diff, invert_seasonal_diff
 from datetime import timedelta
 
 class cat_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+                 differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -23,12 +24,14 @@ class cat_forecaster:
         self.cat_var = cat_variables
         self.n_lag = n_lag
         self.difference = differencing_number
+        self.season_diff = seasonal_length
         self.lag_transform = lag_transform
         self.trend = add_trend
         self.trend_type = trend_type
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
+
 
     def data_prep(self, df):
         dfc = df.copy()
@@ -45,12 +48,12 @@ class cat_forecaster:
             if (self.trend_type == "component"):
                 dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
 
-        if self.difference is not None:
-            if self.difference >1:
-                self.last_train = df[self.target_col].tolist()[-self.difference:]
-            else:
-                self.last_train = df[self.target_col].tolist()[-1]
-            dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+        if (self.difference is not None)|(self.season_diff is not None):
+            self.orig = df[self.target_col].tolist()
+            if self.difference is not None:
+                dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+            if self.season_diff is not None:
+                dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
         if self.cat_var is not None:
             for c in self.cat_var:
@@ -79,6 +82,8 @@ class cat_forecaster:
         #     self.df =df.loc[dfc.index]
         # else:
         return dfc
+
+
     
     def fit(self, df, param = None):
         if param is not None:
@@ -132,18 +137,14 @@ class cat_forecaster:
             predictions.append(pred)
             lags.append(pred)
 
+        
+        forecasts = np.array(predictions)
+        if self.season_diff is not None:
+            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+
         if self.difference is not None:
-            if self.difference>1:
-                predictions_ = self.last_train+predictions
-                for i in range(len(predictions_)):
-                    if i<len(predictions_)-self.difference:
-                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
-                        forecasts = predictions_[-n_ahead:]
-            else:    
-                predictions.insert(0, self.last_train)
-                forecasts = np.cumsum(predictions)[-n_ahead:]
-        else:
-            forecasts = np.array(predictions)
+            forecasts = undiff_ts(self.orig, forecasts, self.difference)
+
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts
         forecasts = np.array([max(0, x) for x in forecasts])
@@ -258,7 +259,8 @@ class cat_forecaster:
         return space_eval(param_space, best_hyperparams)
 
 class lightGBM_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,differencing_number = None, cat_variables = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+                 differencing_number = None,seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -267,6 +269,7 @@ class lightGBM_forecaster:
         self.cat_var = cat_variables
         self.n_lag = n_lag
         self.difference = differencing_number
+        self.season_diff = seasonal_length
         self.lag_transform = lag_transform
         self.trend = add_trend
         self.trend_type = trend_type
@@ -289,12 +292,13 @@ class lightGBM_forecaster:
             if (self.trend_type == "component"):
                 dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
 
-        if self.difference is not None:
-            if self.difference > 1:
-                self.last_train = dfc[self.target_col].tolist()[-self.difference:]
-            else:
-                self.last_train = dfc[self.target_col].tolist()[-1]
-            dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+        if (self.difference is not None)|(self.season_diff is not None):
+            self.orig = df[self.target_col].tolist()
+            if self.difference is not None:
+                dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+            if self.season_diff is not None:
+                dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
+
         if self.cat_var is not None:
             for c in self.cat_var:
                 dfc[c] = dfc[c].astype('category')
@@ -334,6 +338,7 @@ class lightGBM_forecaster:
         # self.data_prep(df)
         # self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
         self.model_lgb = model_lgb.fit(self.X, self.y, categorical_feature=self.cat_var)
+  
     
     def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
@@ -386,18 +391,13 @@ class lightGBM_forecaster:
             pred = self.model_lgb.predict(df_inp)[0]
             predictions.append(pred)
             lags.append(pred)
+
+        forecasts = np.array(predictions)
+        if self.season_diff is not None:
+            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+
         if self.difference is not None:
-            if self.difference>1:
-                predictions_ = self.last_train+predictions
-                for i in range(len(predictions_)):
-                    if i<len(predictions_)-self.difference:
-                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
-                        forecasts = predictions_[-n_ahead:]
-            else:    
-                predictions.insert(0, self.last_train)
-                forecasts = np.cumsum(predictions)[-n_ahead:]
-        else:
-            forecasts = np.array(predictions)
+            forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
@@ -743,7 +743,8 @@ class lightGBM_forecaster:
         return space_eval(param_space, best_hyperparams)
             
 class xgboost_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+                 differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -751,6 +752,7 @@ class xgboost_forecaster:
         self.target_col = target_col
         self.n_lag = n_lag
         self.difference = differencing_number
+        self.season_diff = seasonal_length
         self.lag_transform = lag_transform
         self.cat_variables = cat_variables
         self.trend = add_trend
@@ -784,12 +786,12 @@ class xgboost_forecaster:
                 if (self.trend_type == "component"):
                     dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
 
-            if self.difference is not None:
-                if self.difference >1:
-                    self.last_train = dfc[self.target_col].tolist()[-self.difference:]
-                else:
-                    self.last_train = dfc[self.target_col].tolist()[-1]
-                dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+            if (self.difference is not None)|(self.season_diff is not None):
+                self.orig = df[self.target_col].tolist()
+                if self.difference is not None:
+                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                if self.season_diff is not None:
+                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
                 for i in self.n_lag:
@@ -816,6 +818,7 @@ class xgboost_forecaster:
         #     self.df =df.loc[dfc.index]
         # else:
         return dfc
+
 
     def fit(self, df, param = None):
         if param is not None:
@@ -882,18 +885,12 @@ class xgboost_forecaster:
             predictions.append(pred)
             lags.append(pred)
 
+        forecasts = np.array(predictions)
+        if self.season_diff is not None:
+            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+
         if self.difference is not None:
-            if self.difference>1:
-                predictions_ = self.last_train+predictions
-                for i in range(len(predictions_)):
-                    if i<len(predictions_)-self.difference:
-                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
-                        forecasts = predictions_[-n_ahead:]
-            else:    
-                predictions.insert(0, self.last_train)
-                forecasts = np.cumsum(predictions)[-n_ahead:]
-        else:
-            forecasts = np.array(predictions)
+            forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
@@ -1243,7 +1240,8 @@ class xgboost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class RandomForest_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None,
+    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None,
+                 differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -1251,6 +1249,7 @@ class RandomForest_forecaster:
         self.target_col = target_col
         self.n_lag = n_lag
         self.difference = differencing_number
+        self.season_diff = seasonal_length
         self.lag_transform = lag_transform
         self.cat_variables = cat_variables
         self.trend = add_trend
@@ -1285,12 +1284,12 @@ class RandomForest_forecaster:
                 
                 if (self.trend_type == "component"):
                     dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-            if self.difference is not None:
-                if self.difference >1:
-                    self.last_train = dfc[self.target_col].tolist()[-self.difference:]
-                else:
-                    self.last_train = dfc[self.target_col].tolist()[-1]
-                dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+            if (self.difference is not None)|(self.season_diff is not None):
+                self.orig = df[self.target_col].tolist()
+                if self.difference is not None:
+                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                if self.season_diff is not None:
+                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
                 for i in self.n_lag:
@@ -1380,18 +1379,13 @@ class RandomForest_forecaster:
             predictions.append(pred)
             lags.append(pred)
 
+        forecasts = np.array(predictions)
+        if self.season_diff is not None:
+            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+
         if self.difference is not None:
-            if self.difference>1:
-                predictions_ = self.last_train+predictions
-                for i in range(len(predictions_)):
-                    if i<len(predictions_)-self.difference:
-                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
-                        forecasts = predictions_[-n_ahead:]
-            else:    
-                predictions.insert(0, self.last_train)
-                forecasts = np.cumsum(predictions)[-n_ahead:]
-        else:
-            forecasts = np.array(predictions)
+            forecasts = undiff_ts(self.orig, forecasts, self.difference)
+
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
         forecasts = np.array([max(0, x) for x in forecasts])      
@@ -1736,7 +1730,8 @@ class RandomForest_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class AdaBoost_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None, differencing_number = None, cat_variables = None,
+    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None,
+                 differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -1744,6 +1739,7 @@ class AdaBoost_forecaster:
         self.target_col = target_col
         self.n_lag = n_lag
         self.difference = differencing_number
+        self.season_diff = seasonal_length
         self.lag_transform = lag_transform
         self.cat_variables = cat_variables
         self.trend = add_trend
@@ -1780,12 +1776,12 @@ class AdaBoost_forecaster:
                 if (self.trend_type == "component"):
                     dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
                 
-            if self.difference is not None:
-                if self.difference >1:
-                    self.last_train = dfc[self.target_col].tolist()[-self.difference:]
-                else:
-                    self.last_train = dfc[self.target_col].tolist()[-1]
-                dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+            if (self.difference is not None)|(self.season_diff is not None):
+                self.orig = df[self.target_col].tolist()
+                if self.difference is not None:
+                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                if self.season_diff is not None:
+                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
                 for i in self.n_lag:
@@ -1874,18 +1870,13 @@ class AdaBoost_forecaster:
             predictions.append(pred)
             lags.append(pred)
 
+        forecasts = np.array(predictions)
+        if self.season_diff is not None:
+            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+
         if self.difference is not None:
-            if self.difference>1:
-                predictions_ = self.last_train+predictions
-                for i in range(len(predictions_)):
-                    if i<len(predictions_)-self.difference:
-                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
-                        forecasts = predictions_[-n_ahead:]
-            else:    
-                predictions.insert(0, self.last_train)
-                forecasts = np.cumsum(predictions)[-n_ahead:]
-        else:
-            forecasts = np.array(predictions)
+            forecasts = undiff_ts(self.orig, forecasts, self.difference)
+
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
         forecasts = np.array([max(0, x) for x in forecasts])  
@@ -2232,7 +2223,8 @@ class AdaBoost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class Cubist_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+                 differencing_number = None,seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -2240,6 +2232,7 @@ class Cubist_forecaster:
         self.target_col = target_col
         self.n_lag = n_lag
         self.difference = differencing_number
+        self.season_diff = seasonal_length
         self.lag_transform = lag_transform
         self.cat_variables = cat_variables
         self.trend = add_trend
@@ -2275,12 +2268,12 @@ class Cubist_forecaster:
                 if (self.trend_type == "component"):
                     dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
                 
-            if self.difference is not None:
-                if self.difference >1:
-                    self.last_train = dfc[self.target_col].tolist()[-self.difference:]
-                else:
-                    self.last_train = dfc[self.target_col].tolist()[-1]
-                dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+            if (self.difference is not None)|(self.season_diff is not None):
+                self.orig = df[self.target_col].tolist()
+                if self.difference is not None:
+                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                if self.season_diff is not None:
+                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
                 for i in self.n_lag:
@@ -2369,18 +2362,13 @@ class Cubist_forecaster:
             predictions.append(pred)
             lags.append(pred)
 
+        forecasts = np.array(predictions)
+        if self.season_diff is not None:
+            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+
         if self.difference is not None:
-            if self.difference>1:
-                predictions_ = self.last_train+predictions
-                for i in range(len(predictions_)):
-                    if i<len(predictions_)-self.difference:
-                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
-                        forecasts = predictions_[-n_ahead:]
-            else:    
-                predictions.insert(0, self.last_train)
-                forecasts = np.cumsum(predictions)[-n_ahead:]
-        else:
-            forecasts = np.array(predictions)
+            forecasts = undiff_ts(self.orig, forecasts, self.difference)
+
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts  
         forecasts = np.array([max(0, x) for x in forecasts])        
@@ -2722,7 +2710,8 @@ class Cubist_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class HistGradientBoosting_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, differencing_number = None, cat_variables = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, 
+                 differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -2730,6 +2719,7 @@ class HistGradientBoosting_forecaster:
         self.target_col = target_col
         self.n_lag = n_lag
         self.difference = differencing_number
+        self.season_diff = seasonal_length
         self.lag_transform = lag_transform
         self.cat_variables = cat_variables
         self.trend = add_trend
@@ -2763,12 +2753,12 @@ class HistGradientBoosting_forecaster:
                 if (self.trend_type == "component"):
                     dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
 
-            if self.difference is not None:
-                if self.difference >1:
-                    self.last_train = dfc[self.target_col].tolist()[-self.difference:]
-                else:
-                    self.last_train = dfc[self.target_col].tolist()[-1]
-                dfc[self.target_col] = dfc[self.target_col].diff(self.difference)
+            if (self.difference is not None)|(self.season_diff is not None):
+                self.orig = df[self.target_col].tolist()
+                if self.difference is not None:
+                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                if self.season_diff is not None:
+                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
             if self.n_lag is not None:
                 for i in self.n_lag:
@@ -2851,18 +2841,12 @@ class HistGradientBoosting_forecaster:
             predictions.append(pred)
             lags.append(pred)
 
+        forecasts = np.array(predictions)
+        if self.season_diff is not None:
+            forecasts = invert_seasonal_diff(self.orig, forecasts, self.season_diff)
+
         if self.difference is not None:
-            if self.difference>1:
-                predictions_ = self.last_train+predictions
-                for i in range(len(predictions_)):
-                    if i<len(predictions_)-self.difference:
-                        predictions_[i+self.difference] = predictions_[i]+predictions_[i+self.difference]
-                        forecasts = predictions_[-n_ahead:]
-            else:    
-                predictions.insert(0, self.last_train)
-                forecasts = np.cumsum(predictions)[-n_ahead:]
-        else:
-            forecasts = np.array(predictions)
+            forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
         if (self.trend ==True)&(self.trend_type =="component"):
             forecasts = trend_pred+forecasts    
