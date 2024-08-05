@@ -186,12 +186,15 @@ class cat_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -449,12 +452,15 @@ class lightGBM_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -679,12 +685,15 @@ class lightGBM_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -943,12 +952,15 @@ class xgboost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -1172,12 +1184,15 @@ class xgboost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -1433,12 +1448,15 @@ class RandomForest_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -1660,12 +1678,15 @@ class RandomForest_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -1922,12 +1943,15 @@ class AdaBoost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -2150,12 +2174,15 @@ class AdaBoost_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -2409,12 +2436,15 @@ class Cubist_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -2634,12 +2664,15 @@ class Cubist_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -2886,12 +2919,16 @@ class HistGradientBoosting_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
@@ -3105,12 +3142,15 @@ class HistGradientBoosting_forecaster:
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         def objective(params):
-            if ('n_lag' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
                 if ('n_lag' in params):
                     if type(params["n_lag"]) is tuple:
                         self.n_lag = list(params["n_lag"])
                     else:
                         self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
                 if ('box_cox' in params):
                     self.box_cox = params["box_cox"]
                 if ('box_cox_lmda' in params):
