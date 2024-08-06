@@ -3768,7 +3768,7 @@ class Reg_LR_forecaster:
         self.cv_impotance = pd.DataFrame()
         self.cv_forecats_df= pd.DataFrame()
 
-        for train_index, test_index in tscv.split(df):
+        for i, (train_index, test_index) in enumerate(tscv.split(df)):
             train, test = df.iloc[train_index], df.iloc[test_index]
             x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
             
