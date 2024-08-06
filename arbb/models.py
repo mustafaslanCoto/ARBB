@@ -3792,7 +3792,7 @@ class Reg_LR_forecaster:
                     eval = m(y_test, bb_forecast)
                 self.metrics_dict[m.__name__].append(eval)
 
-            cv_tr_df = pd.DataFrame({"features":self.model_LR.feature_names_in_, "coefs":self.model_LR.coef_}).sort_values(by = "importance", ascending = False)
+            cv_tr_df = pd.DataFrame({"features":self.model_LR.feature_names_in_, "coefs":self.model_LR.coef_}).sort_values(by = "coefs", ascending = False)
             cv_tr_df["fold"] = i
             self.cv_df = pd.concat([self.cv_impotance, cv_tr_df], axis=0)
 
