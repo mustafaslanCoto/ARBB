@@ -314,7 +314,7 @@ def invert_seasonal_diff(orig_data, diff_data, seasonal_length):
     return np.array(conc_data[-len(diff_data):])
 
 
-def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, verbose = False):
+def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, append_horizons = False, verbose = False):
     from sklearn.model_selection import TimeSeriesSplit
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
     from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
@@ -380,6 +380,9 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, verbo
             
     
     
+        if append_horizons is True:
+            actuals = []
+            forecasts = []
         metric = []
         for train_index, test_index in tscv.split(data):
             train, test = data[train_index], data[test_index]
@@ -391,11 +394,22 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, verbo
             
             hw_forecast = hw_fit.forecast(len(test))
             forecast_filled = np.nan_to_num(hw_forecast, nan=0)
-            if eval_metric.__name__== 'mase':
-                accuracy = eval_metric(test, forecast_filled, np.array(train))
+            if append_horizons is True:
+                forecasts += list(forecast_filled)
+                actuals += list(test)
             else:
-                accuracy = eval_metric(test, forecast_filled)
-            metric.append(accuracy)
+                if eval_metric.__name__== 'mase':
+                    accuracy = eval_metric(test, forecast_filled, np.array(train))
+                else:
+                    accuracy = eval_metric(test, forecast_filled)
+                metric.append(accuracy)
+        if append_horizons is True:
+            forecasts = np.array(forecasts)
+            actuals = np.array(actuals)
+            if eval_metric.__name__== 'mase':
+                accuracy = eval_metric(actuals, forecasts, np.array(train))
+            else:
+                accuracy = eval_metric(actuals, forecasts)
         score = np.mean(metric)
         if verbose ==True:
             print ("SCORE:", score)

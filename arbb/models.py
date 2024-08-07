@@ -203,7 +203,7 @@ class cat_forecaster:
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, eval_num = 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, eval_num = 100, verbose= False):
 
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
@@ -264,7 +264,8 @@ class cat_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
 
 
@@ -485,7 +486,8 @@ class lightGBM_forecaster:
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
-    def tune_model(self, df, cv_split, test_size, param_space,eval_metric, opt_horizon = None, append_horizons=False, eval_num = 100):
+    def tune_model(self, df, cv_split, test_size, param_space,eval_metric, opt_horizon = None,
+                   append_horizons=False, eval_num = 100, verbose= False):
         # if 'lags' not in param_space:
         #     self.data_prep(df)
 
@@ -576,7 +578,8 @@ class lightGBM_forecaster:
 
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
         trials = Trials()
@@ -998,7 +1001,8 @@ class xgboost_forecaster:
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric,opt_horizon = None, append_horizons = False, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric,opt_horizon = None,
+                   append_horizons = False, eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -1091,7 +1095,8 @@ class xgboost_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
             
@@ -1513,7 +1518,8 @@ class RandomForest_forecaster:
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, append_horizons = False, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None,
+                   append_horizons = False, eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -1605,7 +1611,8 @@ class RandomForest_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
             
@@ -2025,7 +2032,8 @@ class AdaBoost_forecaster:
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None,append_horizons = False, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None,append_horizons = False,
+                    eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -2117,7 +2125,8 @@ class AdaBoost_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
             
@@ -2535,7 +2544,8 @@ class Cubist_forecaster:
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, append_horizons = False, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None,
+                   append_horizons = False, eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -2628,7 +2638,8 @@ class Cubist_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
             
@@ -3034,7 +3045,8 @@ class HistGradientBoosting_forecaster:
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, append_horizons = False, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, 
+                   append_horizons = False, eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -3122,7 +3134,8 @@ class HistGradientBoosting_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
             
@@ -3523,7 +3536,7 @@ class LR_forecaster:
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric,opt_horizon =None, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric,opt_horizon =None, eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -3577,7 +3590,8 @@ class LR_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
             
@@ -3971,7 +3985,7 @@ class Reg_LR_forecaster:
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
 
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, append_horizons = False, eval_num= 100):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon = None, append_horizons = False, eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -4059,7 +4073,8 @@ class Reg_LR_forecaster:
                 metric.append(accuracy)
             score = np.mean(metric)
 
-            print ("SCORE:", score)
+            if verbose ==True:
+                print ("SCORE:", score)
             return {'loss':score, 'status':STATUS_OK}
             
             
