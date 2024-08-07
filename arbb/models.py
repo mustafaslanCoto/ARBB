@@ -9,7 +9,7 @@ from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, HistGradientBoostingRegressor
 from catboost import CatBoostRegressor
 from cubist import Cubist
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Lasso, Ridge
 from arbb.stats import box_cox_transform, back_box_cox_transform, undiff_ts, seasonal_diff, invert_seasonal_diff
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from datetime import timedelta
@@ -45,16 +45,16 @@ class cat_forecaster:
             dfc[self.target_col] = trans_data
 
 
-        if (self.trend ==True):
+        if self.trend ==True:
             self.len = len(dfc)
             if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
                 self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                if (self.trend_type == "linear"):
+                if self.trend_type == "linear":
                     dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
 
             if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
                 self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                if (self.trend_type == "ses"):
+                if self.trend_type == "ses":
                     dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
         if (self.difference is not None)|(self.season_diff is not None):
