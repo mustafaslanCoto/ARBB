@@ -147,6 +147,8 @@ class cat_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
             else:
                 trend_var = []
 
@@ -406,7 +408,8 @@ class lightGBM_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
-
+                else:
+                    trend_var = []
             else:
                 trend_var = []
                     
@@ -927,6 +930,8 @@ class xgboost_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
             else:
                 trend_var = [] 
                     
@@ -1438,6 +1443,9 @@ class RandomForest_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
+
             else:
                 trend_var = []
                     
