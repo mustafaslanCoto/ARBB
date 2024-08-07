@@ -410,6 +410,7 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, appen
                 accuracy = eval_metric(actuals, forecasts, np.array(train))
             else:
                 accuracy = eval_metric(actuals, forecasts)
+            metric.append(accuracy)
         score = np.mean(metric)
         if verbose ==True:
             print ("SCORE:", score)
