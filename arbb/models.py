@@ -1955,6 +1955,8 @@ class AdaBoost_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
             else:
                 trend_var = []
                     
@@ -2465,6 +2467,8 @@ class Cubist_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
             else:
                 trend_var = []
                     
@@ -2963,6 +2967,8 @@ class HistGradientBoosting_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
             else:
                 trend_var = [] 
                     
@@ -3455,6 +3461,8 @@ class LR_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
             else:
                 trend_var = []
                     
@@ -3896,6 +3904,8 @@ class Reg_LR_forecaster:
             if (self.trend ==True):
                 if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
                     trend_var = [trend_pred[i]]
+                else:
+                    trend_var = []
             else:
                 trend_var = [] 
                     
