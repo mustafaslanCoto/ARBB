@@ -11,10 +11,11 @@ from catboost import CatBoostRegressor
 from cubist import Cubist
 from sklearn.linear_model import LinearRegression
 from arbb.stats import box_cox_transform, back_box_cox_transform, undiff_ts, seasonal_diff, invert_seasonal_diff
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from datetime import timedelta
 
 class cat_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
                  differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -28,6 +29,9 @@ class cat_forecaster:
         self.lag_transform = lag_transform
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -43,10 +47,15 @@ class cat_forecaster:
 
         if (self.trend ==True):
             self.len = len(dfc)
-            self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-            
-            if (self.trend_type == "component"):
-                dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                if (self.trend_type == "linear"):
+                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+            if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                if (self.trend_type == "ses"):
+                    dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
         if (self.difference is not None)|(self.season_diff is not None):
             self.orig = df[self.target_col].tolist()
@@ -72,11 +81,14 @@ class cat_forecaster:
                     else:
                         dfc[i[0].__name__+"_"+str(n)+"_"+str(i[1])] = i[0](df_array, i[1]) 
 
-        if (self.trend ==True) & (self.trend_type == "feature"):
-            # self.len = len(dfc)
-            # self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
+                
         dfc = dfc.dropna()
         # if self.target_col in dfc.columns:
         #     self.dfc = dfc
@@ -103,7 +115,10 @@ class cat_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
 
         for i in range(n_ahead):
             if x_test is not None:
@@ -128,8 +143,9 @@ class cat_forecaster:
             else:
                 transform_lag = []
 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = []
 
@@ -146,8 +162,9 @@ class cat_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts
         forecasts = np.array([max(0, x) for x in forecasts])
 
         if self.box_cox == True:
@@ -260,7 +277,7 @@ class cat_forecaster:
         return space_eval(param_space, best_hyperparams)
 
 class lightGBM_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
                  differencing_number = None,seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -274,6 +291,9 @@ class lightGBM_forecaster:
         self.lag_transform = lag_transform
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -288,10 +308,15 @@ class lightGBM_forecaster:
 
         if (self.trend ==True):
             self.len = len(dfc)
-            self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-            
-            if (self.trend_type == "component"):
-                dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                if (self.trend_type == "linear"):
+                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+            if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                if (self.trend_type == "ses"):
+                    dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
         if (self.difference is not None)|(self.season_diff is not None):
             self.orig = df[self.target_col].tolist()
@@ -318,11 +343,13 @@ class lightGBM_forecaster:
                     else:
                         dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1])
 
-        if (self.trend ==True) & (self.trend_type == "feature"):
-            # self.len = len(dfc)
-            # self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
             
         dfc = dfc.dropna()
 
@@ -347,7 +374,11 @@ class lightGBM_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))        if self.trend ==True:
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
 
         for i in range(n_ahead):
             if x_test is not None:
@@ -372,8 +403,10 @@ class lightGBM_forecaster:
             else:
                 transform_lag = []
 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
+
             else:
                 trend_var = []
                     
@@ -401,8 +434,10 @@ class lightGBM_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts
+
         forecasts = np.array([max(0, x) for x in forecasts])   
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
@@ -745,7 +780,7 @@ class lightGBM_forecaster:
         return space_eval(param_space, best_hyperparams)
             
 class xgboost_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
                  differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -759,6 +794,9 @@ class xgboost_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -783,10 +821,15 @@ class xgboost_forecaster:
             
             if (self.trend ==True):
                 self.len = len(dfc)
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                    if (self.trend_type == "linear"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                    if (self.trend_type == "ses"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
             if (self.difference is not None)|(self.season_diff is not None):
                 self.orig = df[self.target_col].tolist()
@@ -809,10 +852,13 @@ class xgboost_forecaster:
                         else:
                             dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
                             
-        if (self.trend ==True) & (self.trend_type == "feature"):
-
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
         dfc = dfc.dropna()
 
 
@@ -844,7 +890,10 @@ class xgboost_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
 
         for i in range(n_ahead):
             if x_test is not None:
@@ -875,8 +924,9 @@ class xgboost_forecaster:
             else:
                 transform_lag = []
                 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = [] 
                     
@@ -895,8 +945,9 @@ class xgboost_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts   
         forecasts = np.array([max(0, x) for x in forecasts])    
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
@@ -1243,7 +1294,7 @@ class xgboost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class RandomForest_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None,
+    def __init__(self, target_col,add_trend = False, trend_type ="linear", ets_params = None, n_lag=None, lag_transform = None,
                  differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -1257,6 +1308,9 @@ class RandomForest_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -1283,10 +1337,16 @@ class RandomForest_forecaster:
             
             if (self.trend ==True):
                 self.len = len(dfc)
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                    if (self.trend_type == "linear"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+    
+                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                    if (self.trend_type == "ses"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
+                        
             if (self.difference is not None)|(self.season_diff is not None):
                 self.orig = df[self.target_col].tolist()
                 if self.difference is not None:
@@ -1308,10 +1368,13 @@ class RandomForest_forecaster:
                         else:
                             dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
                             
-        if (self.trend ==True) & (self.trend_type == "feature"):
-
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
         dfc = dfc.dropna()
 
 
@@ -1343,7 +1406,10 @@ class RandomForest_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
 
         for i in range(n_ahead):
             if x_test is not None:
@@ -1369,8 +1435,9 @@ class RandomForest_forecaster:
             else:
                 transform_lag = []
                 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = []
                     
@@ -1390,8 +1457,10 @@ class RandomForest_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts
+
         forecasts = np.array([max(0, x) for x in forecasts])      
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
@@ -1734,7 +1803,7 @@ class RandomForest_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class AdaBoost_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None,
+    def __init__(self, target_col,add_trend = False, trend_type ="linear", ets_params = None, n_lag=None, lag_transform = None,
                  differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -1748,6 +1817,9 @@ class AdaBoost_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -1775,10 +1847,15 @@ class AdaBoost_forecaster:
             
             if (self.trend ==True):
                 self.len = len(dfc)
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                    if (self.trend_type == "linear"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+    
+                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                    if (self.trend_type == "ses"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
                 
             if (self.difference is not None)|(self.season_diff is not None):
                 self.orig = df[self.target_col].tolist()
@@ -1801,10 +1878,13 @@ class AdaBoost_forecaster:
                         else:
                             dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
                             
-        if (self.trend ==True) & (self.trend_type == "feature"):
-
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
         dfc = dfc.dropna()
 
 
@@ -1834,7 +1914,10 @@ class AdaBoost_forecaster:
         predictions = []
         
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
             
         for i in range(n_ahead):
 
@@ -1861,8 +1944,9 @@ class AdaBoost_forecaster:
             else:
                 transform_lag = []
                 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = []
                     
@@ -1882,8 +1966,10 @@ class AdaBoost_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts
+
         forecasts = np.array([max(0, x) for x in forecasts])  
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
@@ -2228,7 +2314,7 @@ class AdaBoost_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class Cubist_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None,
+    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
                  differencing_number = None,seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -2242,6 +2328,9 @@ class Cubist_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -2268,10 +2357,15 @@ class Cubist_forecaster:
             
             if (self.trend ==True):
                 self.len = len(dfc)
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                    if (self.trend_type == "linear"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+    
+                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                    if (self.trend_type == "ses"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
                 
             if (self.difference is not None)|(self.season_diff is not None):
                 self.orig = df[self.target_col].tolist()
@@ -2294,10 +2388,13 @@ class Cubist_forecaster:
                         else:
                             dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
                             
-        if (self.trend ==True) & (self.trend_type == "feature"):
-
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
         dfc = dfc.dropna()
 
 
@@ -2327,7 +2424,10 @@ class Cubist_forecaster:
         predictions = []
         
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
             
         for i in range(n_ahead):
 
@@ -2354,8 +2454,9 @@ class Cubist_forecaster:
             else:
                 transform_lag = []
                 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = []
                     
@@ -2375,8 +2476,10 @@ class Cubist_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts  
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts
+
         forecasts = np.array([max(0, x) for x in forecasts])        
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
@@ -2716,7 +2819,7 @@ class Cubist_forecaster:
         return space_eval(param_space, best_hyperparams)
     
 class HistGradientBoosting_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, 
+    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None, 
                  differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -2730,6 +2833,9 @@ class HistGradientBoosting_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -2754,10 +2860,15 @@ class HistGradientBoosting_forecaster:
             
             if (self.trend ==True):
                 self.len = len(dfc)
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                    if (self.trend_type == "linear"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+    
+                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                    if (self.trend_type == "ses"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
             if (self.difference is not None)|(self.season_diff is not None):
                 self.orig = df[self.target_col].tolist()
@@ -2780,10 +2891,13 @@ class HistGradientBoosting_forecaster:
                         else:
                             dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
                             
-        if (self.trend ==True) & (self.trend_type == "feature"):
-
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
         dfc = dfc.dropna()
 
         return dfc
@@ -2809,7 +2923,10 @@ class HistGradientBoosting_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
 
         for i in range(n_ahead):
             if x_test is not None:
@@ -2835,8 +2952,9 @@ class HistGradientBoosting_forecaster:
             else:
                 transform_lag = []
                 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = [] 
                     
@@ -2855,8 +2973,9 @@ class HistGradientBoosting_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts   
         forecasts = np.array([max(0, x) for x in forecasts])      
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
@@ -3192,7 +3311,7 @@ class HistGradientBoosting_forecaster:
         return space_eval(param_space, best_hyperparams)
 
 class LR_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="component", n_lag=None, lag_transform = None,
+    def __init__(self, target_col,add_trend = False, trend_type ="linear", ets_params = None, n_lag=None, lag_transform = None,
                  differencing_number = None, seasonal_length = None, cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
@@ -3206,6 +3325,9 @@ class LR_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -3232,10 +3354,15 @@ class LR_forecaster:
             
             if (self.trend ==True):
                 self.len = len(dfc)
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                    if (self.trend_type == "linear"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+    
+                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                    if (self.trend_type == "ses"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
             
             if (self.difference is not None)|(self.season_diff is not None):
                 self.orig = df[self.target_col].tolist()
@@ -3258,10 +3385,13 @@ class LR_forecaster:
                         else:
                             dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
                             
-        if (self.trend ==True) & (self.trend_type == "feature"):
-
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
         dfc = dfc.dropna()
 
         return dfc
@@ -3285,7 +3415,10 @@ class LR_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
 
         for i in range(n_ahead):
             if x_test is not None:
@@ -3311,8 +3444,9 @@ class LR_forecaster:
             else:
                 transform_lag = []
                 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = []
                     
@@ -3332,8 +3466,9 @@ class LR_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
             
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts
         forecasts = np.array([max(0, x) for x in forecasts])      
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
@@ -3616,8 +3751,9 @@ class LR_forecaster:
         return space_eval(param_space, best_hyperparams)
 
 class Reg_LR_forecaster:
-    def __init__(self, target_col, model = LinearRegression, add_trend = False, trend_type ="component", n_lag = None, lag_transform = None, 
-                 differencing_number = None, seasonal_length = None, cat_variables = None,
+    def __init__(self, target_col, model = LinearRegression, add_trend = False, trend_type ="linear", ets_params = None,
+                 n_lag = None, lag_transform = None, differencing_number = None, seasonal_length = None,
+                 cat_variables = None,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -3630,6 +3766,9 @@ class Reg_LR_forecaster:
         self.cat_variables = cat_variables
         self.trend = add_trend
         self.trend_type = trend_type
+        if ets_params is not None:
+            self.ets_model = ets_params[0]
+            self.ets_fit = ets_params[1]
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
@@ -3654,10 +3793,15 @@ class Reg_LR_forecaster:
             
             if (self.trend ==True):
                 self.len = len(dfc)
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
+                    if (self.trend_type == "linear"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+    
+                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
+                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                    if (self.trend_type == "ses"):
+                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
             if (self.difference is not None)|(self.season_diff is not None):
                 self.orig = df[self.target_col].tolist()
@@ -3680,10 +3824,13 @@ class Reg_LR_forecaster:
                         else:
                             dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
                             
-        if (self.trend ==True) & (self.trend_type == "feature"):
-
+        if self.trend ==True:
             if (self.target_col in dfc.columns):
-                dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                if self.trend_type == "feature_lr":
+                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+
+                if self.trend_type == "feature_ses":
+                    dfc["trend"] = self.ses_model.fittedvalues.values
         dfc = dfc.dropna()
 
         return dfc
@@ -3709,7 +3856,10 @@ class Reg_LR_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
+                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
+                trend_pred = self.ses_model.forecast(n_ahead).values
 
         for i in range(n_ahead):
             if x_test is not None:
@@ -3735,8 +3885,9 @@ class Reg_LR_forecaster:
             else:
                 transform_lag = []
                 
-            if (self.trend ==True) & (self.trend_type == "feature"):
-                trend_var = [trend_pred[i]]
+            if (self.trend ==True):
+                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
+                    trend_var = [trend_pred[i]]
             else:
                 trend_var = [] 
                     
@@ -3754,8 +3905,9 @@ class Reg_LR_forecaster:
         if self.difference is not None:
             forecasts = undiff_ts(self.orig, forecasts, self.difference)
 
-        if (self.trend ==True)&(self.trend_type =="component"):
-            forecasts = trend_pred+forecasts    
+        if (self.trend ==True):
+            if (self.trend_type =="linear")|(self.trend_type =="ses"):
+                forecasts = trend_pred+forecasts 
         forecasts = np.array([max(0, x) for x in forecasts])      
         if self.box_cox == True:
             forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
