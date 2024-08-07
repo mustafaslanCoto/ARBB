@@ -117,6 +117,7 @@ class cat_forecaster:
         if self.trend ==True:
             if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
                 trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+
             if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
                 trend_pred = self.ses_model.forecast(n_ahead).values
 
@@ -374,7 +375,7 @@ class lightGBM_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))        if self.trend ==True:
+            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
             if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
                 trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
             if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
