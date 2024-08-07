@@ -375,7 +375,6 @@ class lightGBM_forecaster:
         predictions = []
 
         if self.trend ==True:
-            trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
             if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
                 trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
             if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
