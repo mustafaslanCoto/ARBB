@@ -314,7 +314,7 @@ def invert_seasonal_diff(orig_data, diff_data, seasonal_length):
     return np.array(conc_data[-len(diff_data):])
 
 
-def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
+def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, verbose = False):
     from sklearn.model_selection import TimeSeriesSplit
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
     from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
@@ -397,8 +397,8 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num):
                 accuracy = eval_metric(test, forecast_filled)
             metric.append(accuracy)
         score = np.mean(metric)
-    
-        print ("SCORE:", score)
+        if verbose ==True:
+            print ("SCORE:", score)
         return {'loss':score, 'status':STATUS_OK}
     
     

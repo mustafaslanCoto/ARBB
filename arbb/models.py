@@ -3964,7 +3964,7 @@ class Reg_LR_forecaster:
 
             cv_tr_df = pd.DataFrame({"features":self.model_LR.feature_names_in_, "coefs":self.model_LR.coef_}).sort_values(by = "coefs", ascending = False)
             cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_impotance, cv_tr_df], axis=0)
+            self.cv_impotance = pd.concat([self.cv_impotance, cv_tr_df], axis=0)
 
         overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
