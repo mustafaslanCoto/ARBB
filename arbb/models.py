@@ -3515,7 +3515,7 @@ class LR_forecaster:
             forecasts = []
 
 
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
+        for train_index, test_index in tscv.split(df):
             train, test = df.iloc[train_index], df.iloc[test_index]
             x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
             
@@ -3536,6 +3536,11 @@ class LR_forecaster:
             else:
                 actuals.append(list(y_test))
                 forecasts.append(list(bb_forecast))
+            forecat_df = test[self.target_col].to_frame()
+            forecat_df["forecasts"] = bb_forecast
+            
+            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
+
         if append_horizons ==True:
             actuals = np.array(actuals)
             forecasts = np.array(forecasts)
@@ -3550,12 +3555,6 @@ class LR_forecaster:
 
 
                     
-
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
 
         overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
         
