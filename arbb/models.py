@@ -58,7 +58,7 @@ class cat_forecaster:
                     dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
         if (self.difference is not None)|(self.season_diff is not None):
-            self.orig = df[self.target_col].tolist()
+            self.orig = dfc[self.target_col].tolist()
             if self.difference is not None:
                 dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
             if self.season_diff is not None:
@@ -323,7 +323,7 @@ class lightGBM_forecaster:
                     dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
         if (self.difference is not None)|(self.season_diff is not None):
-            self.orig = df[self.target_col].tolist()
+            self.orig = dfc[self.target_col].tolist()
             if self.difference is not None:
                 dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
             if self.season_diff is not None:
@@ -838,7 +838,7 @@ class xgboost_forecaster:
                         dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
             if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = df[self.target_col].tolist()
+                self.orig = dfc[self.target_col].tolist()
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
@@ -1358,7 +1358,7 @@ class RandomForest_forecaster:
                         dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
                         
             if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = df[self.target_col].tolist()
+                self.orig = dfc[self.target_col].tolist()
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
@@ -1873,7 +1873,7 @@ class AdaBoost_forecaster:
                         dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
                 
             if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = df[self.target_col].tolist()
+                self.orig = dfc[self.target_col].tolist()
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
@@ -2387,7 +2387,7 @@ class Cubist_forecaster:
                         dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
                 
             if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = df[self.target_col].tolist()
+                self.orig = dfc[self.target_col].tolist()
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
@@ -2894,7 +2894,7 @@ class HistGradientBoosting_forecaster:
                         dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
             if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = df[self.target_col].tolist()
+                self.orig = dfc[self.target_col].tolist()
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
@@ -3392,7 +3392,7 @@ class LR_forecaster:
                         dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
             
             if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = df[self.target_col].tolist()
+                self.orig = dfc[self.target_col].tolist()
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
@@ -3834,7 +3834,7 @@ class Reg_LR_forecaster:
                         dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
 
             if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = df[self.target_col].tolist()
+                self.orig = dfc[self.target_col].tolist()
                 if self.difference is not None:
                     dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
                 if self.season_diff is not None:
