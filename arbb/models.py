@@ -3510,7 +3510,7 @@ class LR_forecaster:
         self.metrics_dict = {m.__name__: [] for m in metrics}
         self.cv_forecats_df = pd.DataFrame()
 
-        if append_horizon == True:
+        if append_horizons == True:
             actuals = []
             forecasts = []
 
