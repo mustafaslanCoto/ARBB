@@ -3504,11 +3504,16 @@ class LR_forecaster:
         return forecasts
         
     
-    def cv(self, df, cv_split, test_size, metrics):
+    def cv(self, df, cv_split, test_size, metrics, append_horizons = False):
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         
         self.metrics_dict = {m.__name__: [] for m in metrics}
         self.cv_forecats_df = pd.DataFrame()
+
+        if append_horizon == True:
+            actuals = []
+            forecasts = []
+
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
             train, test = df.iloc[train_index], df.iloc[test_index]
@@ -3518,14 +3523,34 @@ class LR_forecaster:
             
             bb_forecast = self.forecast(test_size, x_test=x_test)
 
+            if append_horizons == False:
+                for m in metrics:
+                
+                    if m.__name__== 'mean_squared_error':
+                        eval = m(y_test, bb_forecast, squared=False)
+                    elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
+                        eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                    else:
+                        eval = m(y_test, bb_forecast)
+                    self.metrics_dict[m.__name__].append(eval)
+            else:
+                actuals.append(list(y_test))
+                forecasts.append(list(bb_forecast))
+        if append_horizons ==True:
+            actuals = np.array(actuals)
+            forecasts = np.array(forecasts)
             for m in metrics:
                 if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
+                    eval = m(actuals, forecasts, squared=False)
                 elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                    eval = m(actuals, forecasts, np.array(train[self.target_col]))
                 else:
-                    eval = m(y_test, bb_forecast)
+                    eval = m(actuals, forecasts)
                 self.metrics_dict[m.__name__].append(eval)
+
+
+                    
+
 
             forecat_df = test[self.target_col].to_frame()
             forecat_df["forecasts"] = bb_forecast
@@ -3536,7 +3561,8 @@ class LR_forecaster:
         
         return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
     
-    def tune_model(self, df, cv_split, test_size, param_space, eval_metric,opt_horizon =None, eval_num= 100, verbose= False):
+    def tune_model(self, df, cv_split, test_size, param_space, eval_metric, opt_horizon =None, append_horizons = False,
+                   eval_num= 100, verbose= False):
         if self.cat_variables is not None:
             self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
             self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
@@ -3560,6 +3586,10 @@ class LR_forecaster:
                 if ('box_cox_biasadj' in params):
                     self.biasadj = params["box_cox_biasadj"]
 
+
+            if append_horizons == True:
+                actuals = []
+                forecasts = []
                 
             metric = []
             for train_index, test_index in tscv.split(df):
@@ -3571,23 +3601,50 @@ class LR_forecaster:
 
                 self.model_LR = self.model.fit(np.array(self.X), self.y)
                 yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
+                if append_horizons == False:
+                    if eval_metric.__name__== 'mean_squared_error':
+                        if opt_horizon is not None:
+                            accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], squared=False)
+                        else:
+                            accuracy = eval_metric(y_test, yhat, squared=False)
+
+                    elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
+                        if opt_horizon is not None:
+                            accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], np.array(train[self.target_col]))
+                        else:
+                            accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
+                    else:
+                        if opt_horizon is not None:
+                            accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:])
+                        else:
+                            accuracy = eval_metric(y_test, yhat)
+                    metric.append(accuracy)
+                else:
+                    actuals.append(list(yhat))
+                    forecasts.append(list(y_test))
+
+            if append_horizons == True:
+
+                y_test = np.array(actuals)
+                yhat = np.array(forecasts)
                 if eval_metric.__name__== 'mean_squared_error':
                     if opt_horizon is not None:
-                        accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], squared=False)
+                        metric = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], squared=False)
                     else:
-                        accuracy = eval_metric(y_test, yhat, squared=False)
+                        metric = eval_metric(y_test, yhat, squared=False)
 
                 elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
                     if opt_horizon is not None:
-                        accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], np.array(train[self.target_col]))
+                        metric = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], np.array(train[self.target_col]))
                     else:
-                        accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
+                        metric = eval_metric(y_test, yhat, np.array(train[self.target_col]))
                 else:
                     if opt_horizon is not None:
-                        accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:])
+                        metric = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:])
                     else:
-                        accuracy = eval_metric(y_test, yhat)
-                metric.append(accuracy)
+                        metric = eval_metric(y_test, yhat)
+                    
+                    
             score = np.mean(metric)
 
             if verbose ==True:
