@@ -137,6 +137,11 @@ def rolling_quantile(arr, window, q):
     
     return result
 
+@jit(nopython=True)
+def target_power(series, p):
+    series = np.asarray(series)
+    return np.array(series)**p
+
 
 
 def Kfold_target(train, test, cat_var, target_col, encoded_colname, split_num):
