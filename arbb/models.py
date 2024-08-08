@@ -3534,8 +3534,8 @@ class LR_forecaster:
                         eval = m(y_test, bb_forecast)
                     self.metrics_dict[m.__name__].append(eval)
             else:
-                actuals.append(list(y_test))
-                forecasts.append(list(bb_forecast))
+                actuals += list(y_test)
+                forecasts += list(bb_forecast)
             forecat_df = test[self.target_col].to_frame()
             forecat_df["forecasts"] = bb_forecast
             
@@ -3619,8 +3619,8 @@ class LR_forecaster:
                             accuracy = eval_metric(y_test, yhat)
                     metric.append(accuracy)
                 else:
-                    actuals.append(list(yhat))
-                    forecasts.append(list(y_test))
+                    actuals += list(yhat)
+                    forecasts += list(y_test)
 
             if append_horizons == True:
 
