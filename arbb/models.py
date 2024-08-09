@@ -271,14 +271,55 @@ class cat_forecaster:
 
         trials = Trials()
 
+
         best_hyperparams = fmin(fn = objective,
                         space = param_space,
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
         # best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
+        self.all_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
+                    for t in trials.trials]
         
         return space_eval(param_space, best_hyperparams)
+
+    def forecast_prob_forecasts(self, H, train_df, test_df=None):
+        prob_forecasts = []
+        for params in self.all_params:
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                # self.data_prep(df)
+                model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            else:
+                model_params =params
+
+
+            self.fit(train_df, model_params)
+            if test_df is not None:
+                forecasts = self.forecast(H, test_df)
+            else:
+                forecasts = self.forecast(H)
+
+            prob_forecasts.append(forecasts)
+        prob_forecasts = np.row_stack(prob_forecasts)
+        prob_forecasts=pd.DataFrame(prob_forecasts)
+        prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
+        return prob_forecasts
 
 class lightGBM_forecaster:
     def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
@@ -589,9 +630,48 @@ class lightGBM_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
+        self.all_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
+                    for t in trials.trials]
+        
         return space_eval(param_space, best_hyperparams)
+
+    def forecast_prob_forecasts(self, H, train_df, test_df=None):
+        prob_forecasts = []
+        for params in self.all_params:
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                # self.data_prep(df)
+                model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            else:
+                model_params =params
+
+
+            self.fit(train_df, model_params)
+            if test_df is not None:
+                forecasts = self.forecast(H, test_df)
+            else:
+                forecasts = self.forecast(H)
+
+            prob_forecasts.append(forecasts)
+        prob_forecasts = np.row_stack(prob_forecasts)
+        prob_forecasts=pd.DataFrame(prob_forecasts)
+        prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
+        return prob_forecasts
     
     def direct_forecast(self, H, x_test = None):
         if x_test is not None:
@@ -1107,9 +1187,48 @@ class xgboost_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
+        self.all_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
+                    for t in trials.trials]
+        
         return space_eval(param_space, best_hyperparams)
+
+    def forecast_prob_forecasts(self, H, train_df, test_df=None):
+        prob_forecasts = []
+        for params in self.all_params:
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                # self.data_prep(df)
+                model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            else:
+                model_params =params
+
+
+            self.fit(train_df, model_params)
+            if test_df is not None:
+                forecasts = self.forecast(H, test_df)
+            else:
+                forecasts = self.forecast(H)
+
+            prob_forecasts.append(forecasts)
+        prob_forecasts = np.row_stack(prob_forecasts)
+        prob_forecasts=pd.DataFrame(prob_forecasts)
+        prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
+        return prob_forecasts
 
     def direct_forecast(self, H, x_test = None):
         if x_test is not None:
@@ -1623,9 +1742,50 @@ class RandomForest_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
+        self.all_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
+                    for t in trials.trials]
+        
         return space_eval(param_space, best_hyperparams)
+
+    def forecast_prob_forecasts(self, H, train_df, test_df=None):
+        prob_forecasts = []
+        for params in self.all_params:
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                # self.data_prep(df)
+                model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            else:
+                model_params =params
+
+
+            self.fit(train_df, model_params)
+            if test_df is not None:
+                forecasts = self.forecast(H, test_df)
+            else:
+                forecasts = self.forecast(H)
+
+            prob_forecasts.append(forecasts)
+        prob_forecasts = np.row_stack(prob_forecasts)
+        prob_forecasts=pd.DataFrame(prob_forecasts)
+        prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
+        return prob_forecasts
+    
+
     def direct_forecast(self, H, x_test = None):
         if x_test is not None:
             if isinstance(x_test, pd.Series):
@@ -2137,9 +2297,48 @@ class AdaBoost_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
+        self.all_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
+                    for t in trials.trials]
+        
         return space_eval(param_space, best_hyperparams)
+
+    def forecast_prob_forecasts(self, H, train_df, test_df=None):
+        prob_forecasts = []
+        for params in self.all_params:
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                # self.data_prep(df)
+                model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            else:
+                model_params =params
+
+
+            self.fit(train_df, model_params)
+            if test_df is not None:
+                forecasts = self.forecast(H, test_df)
+            else:
+                forecasts = self.forecast(H)
+
+            prob_forecasts.append(forecasts)
+        prob_forecasts = np.row_stack(prob_forecasts)
+        prob_forecasts=pd.DataFrame(prob_forecasts)
+        prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
+        return prob_forecasts
     
     def direct_forecast(self, H, x_test = None):
         if x_test is not None:
@@ -2650,9 +2849,48 @@ class Cubist_forecaster:
                         algo = tpe.suggest,
                         max_evals = eval_num,
                         trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["n_estimators", "max_depth"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
+        self.all_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
+                    for t in trials.trials]
+        
         return space_eval(param_space, best_hyperparams)
+
+    def forecast_prob_forecasts(self, H, train_df, test_df=None):
+        prob_forecasts = []
+        for params in self.all_params:
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                # self.data_prep(df)
+                model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            else:
+                model_params =params
+
+
+            self.fit(train_df, model_params)
+            if test_df is not None:
+                forecasts = self.forecast(H, test_df)
+            else:
+                forecasts = self.forecast(H)
+
+            prob_forecasts.append(forecasts)
+        prob_forecasts = np.row_stack(prob_forecasts)
+        prob_forecasts=pd.DataFrame(prob_forecasts)
+        prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
+        return prob_forecasts
     
     def direct_forecast(self, H, x_test = None):
         if x_test is not None:
@@ -3147,7 +3385,48 @@ class HistGradientBoosting_forecaster:
                         max_evals = eval_num,
                         trials = trials)
 
+        self.all_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
+                    for t in trials.trials]
+        
         return space_eval(param_space, best_hyperparams)
+
+    def forecast_prob_forecasts(self, H, train_df, test_df=None):
+        prob_forecasts = []
+        for params in self.all_params:
+            if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
+                if ('n_lag' in params):
+                    if type(params["n_lag"]) is tuple:
+                        self.n_lag = list(params["n_lag"])
+                    else:
+                        self.n_lag = range(1, params["n_lag"]+1)
+
+                if ('differencing_number' in params):
+                    self.difference = params["differencing_number"]
+                if ('box_cox' in params):
+                    self.box_cox = params["box_cox"]
+                if ('box_cox_lmda' in params):
+                    self.lmda = params["box_cox_lmda"]
+
+                if ('box_cox_biasadj' in params):
+                    self.biasadj = params["box_cox_biasadj"]
+
+                # self.data_prep(df)
+                model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            else:
+                model_params =params
+
+
+            self.fit(train_df, model_params)
+            if test_df is not None:
+                forecasts = self.forecast(H, test_df)
+            else:
+                forecasts = self.forecast(H)
+
+            prob_forecasts.append(forecasts)
+        prob_forecasts = np.row_stack(prob_forecasts)
+        prob_forecasts=pd.DataFrame(prob_forecasts)
+        prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
+        return prob_forecasts
     
     def direct_forecast(self, H, x_test = None):
         if x_test is not None:
