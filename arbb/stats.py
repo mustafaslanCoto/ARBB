@@ -140,10 +140,10 @@ def rolling_quantile(arr, window, q):
 def target_power(series, p):
     return np.array(series)**p
 
-def forward_lag_selection(df, max_lag, n_folds, H, model, model_params, metrics, verbose = False):
-    max_lag = max_lag
-    orj_lags = list(range(1, max_lag+1))
-    lags = list(range(1, max_lag+1))
+def forward_lag_selection(df, max_lags, n_folds, H, model, model_params, metrics, verbose = False):
+    max_lag = max_lags
+    orj_lags = list(range(1, max_lags+1))
+    lags = list(range(1, max_lags+1))
     best_lags = []
     
     best_score = list(np.repeat(float('inf'), len(metrics)))
@@ -178,6 +178,78 @@ def forward_lag_selection(df, max_lag, n_folds, H, model, model_params, metrics,
             orj_lags = [item for item in orj_lags if item not in best_lags]
             orj_lags.sort()
             max_lag = len(orj_lags)
+    return best_lags
+
+def backward_lag_selection(df, max_lags,min_lags, n_folds, H, model, model_params, metrics, forward_back=False, verbose = False):
+    max_lag = max_lags
+    min_lag =min_lags
+    lags = list(range(1, max_lag+1))
+    
+    best_score = list(np.repeat(float('inf'), len(metrics)))
+    
+    worst_lags = []
+    best_lags = None
+    while len(lags) >= min_lag:
+        worst_lag=None
+        for lg in lags:
+            lags_to_test = [x for x in lags if x != lg]
+            lags_to_test.sort()
+            lag_model = model(**model_params, n_lag = lags_to_test)
+            my_cv = lag_model.cv(df, n_folds,H, metrics)
+            scores = my_cv["score"].tolist()
+            if scores<best_score:
+                best_lags = lags_to_test
+                worst_lag = lg
+        if worst_lag is not None:
+            # lags.append(best_lag)
+            lags.remove(worst_lag)
+            worst_lags.append(worst_lag)
+            # print(lags)
+            lags.sort()
+            best_lags.sort()
+            if verbose == True:
+                print(len(best_lags))
+        else:
+            break
+    
+    if forward_back ==True:
+    
+        orj_lags = worst_lags.copy()
+        orj_lags.sort()
+        len_worst = len(orj_lags)
+        
+        while len(worst_lags)>0:
+            for i in range(len_worst):
+                best_lag = None
+                for lg in worst_lags:
+                    current_lag = best_lags + [lg]
+                    current_lag.sort()
+                    lag_model = model(**model_params, n_lag = current_lag)
+                    my_cv = lag_model.cv(df, n_folds,H, metrics)
+                    scores = my_cv["score"].tolist()
+                    if scores<best_score:
+                        best_score = scores
+                        best_lag = lg 
+                        
+                if best_lag is not None:
+                    best_lags.append(best_lag)
+                    worst_lags.remove(best_lag)
+                    if verbose == True:
+                        print(len(best_lags))
+                    best_lags.sort()
+                    # if verbose = True:
+                    #     print(best_lags)
+                else:
+                    break
+            if best_lag is None:
+                break
+            worst_lags = [item for item in orj_lags if item not in best_lags]
+            lags.sort()
+            if worst_lags == orj_lags:
+                break
+            else:
+                orj_lags = [item for item in orj_lags if item not in best_lags]
+                orj_lags.sort()
     return best_lags
 
 
