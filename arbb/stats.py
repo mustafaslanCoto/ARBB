@@ -165,7 +165,7 @@ def forward_lag_selection(df, max_lags, n_folds, H, model, model_params, metrics
                 lags.remove(best_lag)
                 best_lags.sort()
                 if verbose == True:
-                    print(best_lags)
+                    print(len(best_lags))
             else:
                 break
         if best_lag is None:
