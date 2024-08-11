@@ -140,6 +140,46 @@ def rolling_quantile(arr, window, q):
 def target_power(series, p):
     return np.array(series)**p
 
+def forward_lag_selection(df, max_lag, n_folds, H, model, model_params, metrics, verbose = False):
+    max_lag = max_lag
+    orj_lags = list(range(1, max_lag+1))
+    lags = list(range(1, max_lag+1))
+    best_lags = []
+    
+    best_score = list(np.repeat(float('inf'), len(metrics)))
+    
+    while max_lag>0:
+        for i in range(max_lag):
+            best_lag = None
+            for lg in lags:
+                current_lag = best_lags + [lg]
+                current_lag.sort()
+                lag_model = model(**model_params, n_lag = current_lag)
+                my_cv = lag_model.cv(df, n_folds,H, metrics)
+                scores = my_cv["score"].tolist()
+                if scores<best_score:
+                    best_score = scores
+                    best_lag = lg 
+            if best_lag is not None:
+                best_lags.append(best_lag)
+                lags.remove(best_lag)
+                best_lags.sort()
+                if verbose == True:
+                    print(best_lags)
+            else:
+                break
+        if best_lag is None:
+            break
+        lags = [item for item in orj_lags if item not in best_lags]
+        lags.sort()
+        if lags == orj_lags:
+            break
+        else:
+            orj_lags = [item for item in orj_lags if item not in best_lags]
+            orj_lags.sort()
+            max_lag = len(orj_lags)
+    return best_lags
+
 
 
 def Kfold_target(train, test, cat_var, target_col, encoded_colname, split_num):
