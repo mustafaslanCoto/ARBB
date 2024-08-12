@@ -4464,7 +4464,7 @@ def backtest_tune(model, df, n_windows, H, param_space,eval_metric, opt_horizon 
         metric = []
         fix_idx = n_windows+H
         for i in range(1, n_windows+1):
-            train, test = df[:-(fix_idx-i)], 
+            train = df[:-(fix_idx-i)]
             if i ==n_windows:
                 test = df[-H:]
             else:
@@ -4516,7 +4516,7 @@ def backtest_model(model, df, n_windows, H, metrics, model_params=None):
     actuals = []
     fix_idx = n_windows+H
     for i in range(1, n_windows+1):
-        train, test = df[:-(fix_idx-i)], 
+        train = df[:-(fix_idx-i)]
         if i ==n_windows:
             test = df[-H:]
         else:
