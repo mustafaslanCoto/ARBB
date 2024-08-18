@@ -5,6 +5,7 @@ from numba import jit
 from scipy.stats import boxcox
 from scipy.special import inv_boxcox
 from sklearn.linear_model import LinearRegression
+from arbb.models import VAR_model
 from numba import jit
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
@@ -273,7 +274,7 @@ def var_forward_lag_selection(df, max_lags, target_col, n_folds, H, model_params
                     current_lag = {a:b for a, b in best_lags.items()}
                     current_lag[k] = best_lags[k] + [x]
                     current_lag[k].sort()
-                    lag_model = VARX(**model_params, lag_dict = current_lag)
+                    lag_model = VAR_model(**model_params, lag_dict = current_lag)
                     my_cv = lag_model.cv_var(df, target_col, n_folds, H, metrics)
                     scores = my_cv["score"].tolist()
                     if scores<best_score:
@@ -321,7 +322,7 @@ def var_backward_lag_selection(df, max_lags, min_lags, n_folds,target_col, H, mo
                 lags_to_test = {a:b for a, b in lags.items()}
                 lags_to_test[k] = [x for x in lg if x != r]
                 lags_to_test[k].sort()
-                lag_model = VARX(**model_params, lag_dict = lags_to_test)
+                lag_model = VAR_model(**model_params, lag_dict = lags_to_test)
                 my_cv = lag_model.cv_var(df, target_col, n_folds, H, metrics)
                 scores = my_cv["score"].tolist()
                 if scores<best_score:
@@ -358,7 +359,7 @@ def var_backward_lag_selection(df, max_lags, min_lags, n_folds,target_col, H, mo
                         current_lag = {a:b for a, b in best_lags.items()}
                         current_lag[k] = best_lags[k] + [x]
                         current_lag[k].sort()
-                        lag_model = VARX(**model_params, lag_dict = current_lag)
+                        lag_model = VAR_model(**model_params, lag_dict = current_lag)
                         my_cv = lag_model.cv_var(df, target_col, n_folds, H, metrics)
                         scores = my_cv["score"].tolist()
                         if scores<best_score:
