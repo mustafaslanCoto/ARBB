@@ -1723,6 +1723,18 @@ def cv_tune(model, df, cv_split, test_size, param_space,eval_metric, opt_horizon
             if ('box_cox_biasadj' in params):
                 model.biasadj = params["box_cox_biasadj"]
 
+
+        if (model.trend_type == "ses")|(model.trend_type == "feature_ses"):
+            model.ets_model = {}
+            for ets_param1 in ["trend", "damped_trend", "seasonal", "seasonal_periods"]:
+                if ets_param1 in params:
+                    model.ets_model[ets_param1] = params[ets_param1]
+            model.ets_fit = {}
+            for ets_param2 in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
+                if ets_param2 in params:
+                    model.ets_fit[ets_param2] = params[ets_param2]
+            # model.ets_model = ets_params[0]
+
             # self.data_prep(df)
         if model.model.__name__ != 'LinearRegression':
             model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
