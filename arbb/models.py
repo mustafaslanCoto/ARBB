@@ -1732,7 +1732,10 @@ def cv_tune(model, df, cv_split, test_size, param_space,eval_metric, opt_horizon
             model.ets_fit = {}
             for ets_param2 in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
                 if ets_param2 in params:
-                    model.ets_fit[ets_param2] = params[ets_param2]
+                    if (ets_param2 =="damping_trend") & (params["damped_trend"]==False):
+                        pass
+                    else:
+                        model.ets_fit[ets_param2] = params[ets_param2]
             # model.ets_model = ets_params[0]
 
             # self.data_prep(df)
