@@ -1737,7 +1737,7 @@ def cv_tune(model, df, cv_split, test_size, param_space,eval_metric, opt_horizon
 
             # self.data_prep(df)
         if model.model.__name__ != 'LinearRegression':
-            model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
+            model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj", "trend", "damped_trend", "seasonal", "seasonal_periods", "smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"])}
 
         metric = []
         for train_index, test_index in tscv.split(df):
