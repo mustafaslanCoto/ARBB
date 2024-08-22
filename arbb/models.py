@@ -13,6 +13,7 @@ from sklearn.linear_model import LinearRegression, Lasso, Ridge
 from arbb.stats import box_cox_transform, back_box_cox_transform, undiff_ts, seasonal_diff, invert_seasonal_diff
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from datetime import timedelta
+from sklearn.model_selection import KFold
 
 class cat_forecaster:
     def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
@@ -208,7 +209,7 @@ class cat_forecaster:
 
 class lightGBM_forecaster:
     def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
-                 differencing_number = None,seasonal_length = None, cat_variables = None,
+                 differencing_number = None,seasonal_length = None, cat_variables = None, target_encode=False,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -230,9 +231,22 @@ class lightGBM_forecaster:
         self.tuned_params = None
         self.actuals = None
         self.prob_forecasts = None
+        self.target_encode = target_encode
         
     def data_prep(self, df):
         dfc = df.copy()
+
+        if self.cat_var is not None:
+            if self.target_encode ==True:
+                for i in self.cat_var:
+                    encode_col = i+"_target_encoded"
+                    dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
+                self.df_encode = dfc.copy()
+                dfc = dfc.drop(columns = self.cat_var)
+
+            else:
+                for c in self.cat_var:
+                    dfc[c] = dfc[c].astype('category')
 
         if self.box_cox == True:
             self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
@@ -259,9 +273,6 @@ class lightGBM_forecaster:
                 self.orig_d = dfc[self.target_col].tolist()
                 dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
-        if self.cat_var is not None:
-            for c in self.cat_var:
-                dfc[c] = dfc[c].astype('category')
                 
         if self.n_lag is not None:
             for i in self.n_lag:
@@ -305,6 +316,14 @@ class lightGBM_forecaster:
     def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
         predictions = []
+
+        if self.cat_var is not None:
+            if self.target_encode ==True:
+                for c in self.cat_var:
+                    encode_col = c+"_target_encoded"
+                    x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
+                x_test = x_test.drop(columns = self.cat_var)
+
 
         if self.trend ==True:
             if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
@@ -417,7 +436,7 @@ class lightGBM_forecaster:
             
 class xgboost_forecaster:
     def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
-                 differencing_number = None, seasonal_length = None, cat_variables = None,
+                 differencing_number = None, seasonal_length = None, cat_variables = None, target_encode=False,
                  box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
         if (n_lag == None) and (lag_transform == None):
             raise ValueError('Expected either n_lag or lag_transform args')
@@ -439,18 +458,27 @@ class xgboost_forecaster:
         self.tuned_params = None
         self.actuals = None
         self.prob_forecasts = None
+        self.target_encode = target_encode
 
         
     def data_prep(self, df):
         dfc = df.copy()
         if self.cat_variables is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
+            if (self.target_col in dfc.columns):
+                if self.target_encode ==True:
+                    for i in self.cat_var:
+                        encode_col = i+"_target_encoded"
+                        dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
+                    self.df_encode = dfc.copy()
+                    dfc = dfc.drop(columns = self.cat_var)
+            else:
+                for col, cat in self.cat_var.items():
+                    dfc[col] = dfc[col].astype('category')
+                    dfc[col] = dfc[col].cat.set_categories(cat)
+                dfc = pd.get_dummies(dfc)
 
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+                for i in self.drop_categ:
+                    dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
                 
         if (self.target_col in dfc.columns):
             if self.box_cox == True:
@@ -514,8 +542,9 @@ class xgboost_forecaster:
         else:
             model_ =self.model()
         if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+            if self.target_encode == False:
+                self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+                self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
         
         model_train = self.data_prep(df)
         self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
@@ -524,7 +553,14 @@ class xgboost_forecaster:
 
     def forecast(self, n_ahead, x_test = None):
         if x_test is not None:
-            x_dummy = self.data_prep(x_test)
+            if self.cat_var is not None:
+                if self.target_encode ==True:
+                    for c in self.cat_var:
+                        encode_col = c+"_target_encoded"
+                        x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
+                    x_dummy = x_test.drop(columns = self.cat_var)
+            else:
+                x_dummy = self.data_prep(x_test)
         lags = self.y.tolist()
         predictions = []
 
@@ -3787,3 +3823,52 @@ def cv_tune_var(model, df, target_col, cv_split, test_size, param_space,eval_met
                 for t in trials.trials]
     
     return space_eval(param_space, best_hyperparams)
+
+def kfold_target_encoder(df, feature_col, target_col, n_splits=5):
+    # Create a copy of the dataframe
+    df_encoded = df.copy()
+    
+    # Initialize KFold
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    
+    # Create a new column for the encoded values
+    encoded_col_name = f"{feature_col}_target_encoded"
+    df_encoded[encoded_col_name] = np.nan
+    feat_idx = df_encoded.columns.get_loc(feature_col)
+    encode_idx = df_encoded.columns.get_loc(encoded_col_name)
+    
+    # Perform K-fold target encoding
+    for train_idx, val_idx in kf.split(df):
+        # Calculate target mean for each category in training data
+        target_means = df.iloc[train_idx].groupby(feature_col)[target_col].mean()
+        
+        # Apply target means to validation fold
+        df_encoded.iloc[val_idx, encode_idx] = df_encoded.iloc[val_idx, feat_idx].map(target_means)
+    
+    # Handle any missing values (for categories not seen in training)
+    overall_mean = df[target_col].mean()
+    df_encoded[encoded_col_name].fillna(overall_mean, inplace=True)
+    
+    return df_encoded[encoded_col_name].values
+
+def target_encoder_for_test(train_df, test_df, feature_col):
+    # Calculate target mean for each category in the entire training data
+    encoded_col_name = f"{feature_col}_target_encoded"
+    
+    target_means = train_df.groupby(feature_col)[encoded_col_name].mean()
+    
+    # Calculate overall mean (for handling unseen categories)
+    overall_mean = train_df[encoded_col_name].mean()
+    
+    # Create a copy of the test dataframe
+    test_encoded = test_df.copy()
+    
+    # Create a new column for the encoded values
+    
+    # Apply target means to test data
+    test_encoded[encoded_col_name] = test_df[feature_col].map(target_means)
+    
+    # Handle any missing values (for categories not seen in training)
+    test_encoded[encoded_col_name].fillna(overall_mean, inplace=True)
+    
+    return test_encoded[encoded_col_name].values
