@@ -310,8 +310,10 @@ class lightGBM_forecaster:
         self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
         # self.data_prep(df)
         # self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
-        self.model_fit = model_.fit(self.X, self.y, categorical_feature=self.cat_var)
-  
+        if self.target_encode == False:
+            self.model_fit = model_.fit(self.X, self.y, categorical_feature=self.cat_var)
+        else:
+            self.model_fit = model_.fit(self.X, self.y)
     
     def forecast(self, n_ahead, x_test = None):
         lags = self.y.tolist()
