@@ -554,7 +554,7 @@ class xgboost_forecaster:
 
     def forecast(self, n_ahead, x_test = None):
         if x_test is not None:
-            if self.cat_var is not None:
+            if self.cat_variables is not None:
                 if self.target_encode ==True:
                     for c in self.cat_variables:
                         encode_col = c+"_target_encoded"
