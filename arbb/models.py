@@ -319,12 +319,11 @@ class lightGBM_forecaster:
         lags = self.y.tolist()
         predictions = []
 
-        if self.cat_var is not None:
-            if self.target_encode ==True:
-                for c in self.cat_var:
-                    encode_col = c+"_target_encoded"
-                    x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
-                x_test = x_test.drop(columns = self.cat_var)
+        if (self.cat_var is not None) & (self.target_encode ==True):
+            for c in self.cat_var:
+                encode_col = c+"_target_encoded"
+                x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
+            x_test = x_test.drop(columns = self.cat_var)
 
 
         if self.trend ==True:
@@ -468,7 +467,7 @@ class xgboost_forecaster:
         if self.cat_variables is not None:
             if (self.target_col in dfc.columns):
                 if self.target_encode ==True:
-                    for i in self.cat_var:
+                    for i in self.cat_variables:
                         encode_col = i+"_target_encoded"
                         dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
                     self.df_encode = dfc.copy()
@@ -557,12 +556,13 @@ class xgboost_forecaster:
         if x_test is not None:
             if self.cat_var is not None:
                 if self.target_encode ==True:
-                    for c in self.cat_var:
+                    for c in self.cat_variables:
                         encode_col = c+"_target_encoded"
                         x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
                     x_dummy = x_test.drop(columns = self.cat_var)
             else:
-                x_dummy = self.data_prep(x_test)
+                if self.target_encode ==False:
+                    x_dummy = self.data_prep(x_test)
         lags = self.y.tolist()
         predictions = []
 
