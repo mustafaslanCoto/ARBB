@@ -471,7 +471,7 @@ class xgboost_forecaster:
                         encode_col = i+"_target_encoded"
                         dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
                     self.df_encode = dfc.copy()
-                    dfc = dfc.drop(columns = self.cat_var)
+                    dfc = dfc.drop(columns = self.cat_variables)
             else:
                 for col, cat in self.cat_var.items():
                     dfc[col] = dfc[col].astype('category')
@@ -559,7 +559,7 @@ class xgboost_forecaster:
                     for c in self.cat_variables:
                         encode_col = c+"_target_encoded"
                         x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
-                    x_dummy = x_test.drop(columns = self.cat_var)
+                    x_dummy = x_test.drop(columns = self.cat_variables)
             else:
                 if self.target_encode ==False:
                     x_dummy = self.data_prep(x_test)
