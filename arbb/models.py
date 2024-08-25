@@ -560,8 +560,7 @@ class xgboost_forecaster:
                         encode_col = c+"_target_encoded"
                         x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
                     x_dummy = x_test.drop(columns = self.cat_variables)
-            else:
-                if self.target_encode ==False:
+                else:
                     x_dummy = self.data_prep(x_test)
         lags = self.y.tolist()
         predictions = []
