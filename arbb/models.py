@@ -237,14 +237,7 @@ class lightGBM_forecaster:
         dfc = df.copy()
 
         if self.cat_var is not None:
-            if self.target_encode ==True:
-                for i in self.cat_var:
-                    encode_col = i+"_target_encoded"
-                    dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
-                self.df_encode = dfc.copy()
-                dfc = dfc.drop(columns = self.cat_var)
-
-            else:
+            if self.target_encode ==False:
                 for c in self.cat_var:
                     dfc[c] = dfc[c].astype('category')
 
@@ -273,6 +266,13 @@ class lightGBM_forecaster:
                 self.orig_d = dfc[self.target_col].tolist()
                 dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
 
+        if self.cat_var is not None:
+            if self.target_encode ==True:
+                for i in self.cat_var:
+                    encode_col = i+"_target_encoded"
+                    dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
+                self.df_encode = dfc.copy().dropna()
+                dfc = dfc.drop(columns = self.cat_var)
                 
         if self.n_lag is not None:
             for i in self.n_lag:
@@ -465,14 +465,7 @@ class xgboost_forecaster:
     def data_prep(self, df):
         dfc = df.copy()
         if self.cat_variables is not None:
-            if (self.target_col in dfc.columns):
-                if self.target_encode ==True:
-                    for i in self.cat_variables:
-                        encode_col = i+"_target_encoded"
-                        dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
-                    self.df_encode = dfc.copy()
-                    dfc = dfc.drop(columns = self.cat_variables)
-            else:
+            if self.target_encode ==False:
                 for col, cat in self.cat_var.items():
                     dfc[col] = dfc[col].astype('category')
                     dfc[col] = dfc[col].cat.set_categories(cat)
@@ -506,6 +499,14 @@ class xgboost_forecaster:
                 if self.season_diff is not None:
                     self.orig_d = dfc[self.target_col].tolist()
                     dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
+
+            if self.cat_variables is not None:
+                if self.target_encode ==True:
+                    for i in self.cat_variables:
+                        encode_col = i+"_target_encoded"
+                        dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
+                    self.df_encode = dfc.copy().dropna()
+                    dfc = dfc.drop(columns = self.cat_variables)
 
             if self.n_lag is not None:
                 for i in self.n_lag:
