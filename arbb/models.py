@@ -243,8 +243,7 @@ class lightGBM_forecaster:
                     dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
                 self.df_encode = dfc.copy()
                 dfc = dfc.drop(columns = self.cat_var)
-        else:
-            if self.target_encode ==False:
+            else:
                 for c in self.cat_var:
                     dfc[c] = dfc[c].astype('category')
 
