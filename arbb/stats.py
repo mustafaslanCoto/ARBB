@@ -561,7 +561,7 @@ def invert_seasonal_diff(orig_data, diff_data, seasonal_length):
     return np.array(conc_data[-len(diff_data):])
 
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def nzInterval(data, lag=0):
     # arr = np.array(data)
     intervals = []
@@ -586,7 +586,7 @@ def nzInterval(data, lag=0):
         intervals = nas+intervals
     return np.array(intervals)
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def zeroCumulative(data, lag=0):
 
     if lag !=0:
