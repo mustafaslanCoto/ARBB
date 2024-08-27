@@ -561,6 +561,55 @@ def invert_seasonal_diff(orig_data, diff_data, seasonal_length):
     return np.array(conc_data[-len(diff_data):])
 
 
+@jit(nopython=True)
+def nzInterval(data, lag=0):
+    # arr = np.array(data)
+    intervals = []
+    last_nonzero_times = []
+    if lag !=0:
+        arr = data[:-lag]
+    else:
+        arr = data
+
+    for i, j in enumerate(arr):
+        if j > 0.5:
+            last_nonzero_times.append(i)
+        
+        if len(last_nonzero_times)==1:
+            intervals.append(1)
+        else:
+            inter = last_nonzero_times[-1]-last_nonzero_times[-2]
+            intervals.append(inter)
+    
+    if lag !=0:
+        nas = list(np.repeat(np.nan, lag))
+        intervals = nas+intervals
+    return np.array(intervals)
+
+@jit(nopython=True)
+def zeroCumulative(data, lag=0):
+
+    if lag !=0:
+        arr = data[:-lag]
+    else:
+        arr = data
+
+    count = 0
+    result = []
+    
+    for value in arr:
+        if value < 0.5:
+            count += 1
+        else:
+            count = 0
+        result.append(count)
+
+    if lag !=0:
+        nas = list(np.repeat(np.nan, lag))
+        result = nas+result
+    return np.array(result)
+
+
 def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, append_horizons = False, verbose = False):
     from sklearn.model_selection import TimeSeriesSplit
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
