@@ -80,9 +80,10 @@ class cat_forecaster:
             for n, k in self.lag_transform.items():
                 df_array = np.array(dfc[self.target_col].shift(n))
                 for f in k:
-                    if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                        arr2 = np.array(dfc[self.target_col])
-                        dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                    if not isinstance(f, tuple):
+                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                            arr2 = np.array(dfc[self.target_col])
+                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                     elif f[0].__name__ == "rolling_quantile":
                         dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                     else:
@@ -143,9 +144,10 @@ class cat_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
@@ -286,9 +288,10 @@ class lightGBM_forecaster:
             for n, k in self.lag_transform.items():
                 df_array = np.array(dfc[self.target_col].shift(n))
                 for f in k:
-                    if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                        arr2 = np.array(dfc[self.target_col])
-                        dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                    if not isinstance(f, tuple):
+                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                            arr2 = np.array(dfc[self.target_col])
+                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                     elif f[0].__name__ == "rolling_quantile":
                         dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                     else:
@@ -354,9 +357,10 @@ class lightGBM_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
@@ -526,9 +530,10 @@ class xgboost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(dfc[self.target_col])
+                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                         elif f[0].__name__ == "rolling_quantile":
                             dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                         else:
@@ -606,9 +611,10 @@ class xgboost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
@@ -761,9 +767,10 @@ class RandomForest_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(dfc[self.target_col])
+                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                         elif f[0].__name__ == "rolling_quantile":
                             dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                         else:
@@ -828,9 +835,10 @@ class RandomForest_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
@@ -986,9 +994,10 @@ class AdaBoost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(dfc[self.target_col])
+                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                         elif f[0].__name__ == "rolling_quantile":
                             dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                         else:
@@ -1052,9 +1061,10 @@ class AdaBoost_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
@@ -1209,9 +1219,10 @@ class Cubist_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(dfc[self.target_col])
+                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                         elif f[0].__name__ == "rolling_quantile":
                             dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                         else:
@@ -1275,9 +1286,10 @@ class Cubist_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
@@ -1429,9 +1441,10 @@ class HistGradientBoosting_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(dfc[self.target_col])
+                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                         elif f[0].__name__ == "rolling_quantile":
                             dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                         else:
@@ -1490,9 +1503,10 @@ class HistGradientBoosting_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
@@ -1642,9 +1656,10 @@ class LR_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(dfc[self.target_col].shift(n))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(dfc[self.target_col])
+                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
                         elif f[0].__name__ == "rolling_quantile":
                             dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
                         else:
@@ -1704,9 +1719,10 @@ class LR_forecaster:
                 for n, k in self.lag_transform.items():
                     df_array = np.array(pd.Series(lags).shift(n-1))
                     for f in k:
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(pd.Series(lags))
-                            t1 = f(arr2, n-1)[-1]
+                        if not isinstance(f, tuple):
+                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
+                                arr2 = np.array(pd.Series(lags))
+                                t1 = f(arr2, n-1)[-1]
                         elif f[0].__name__ == "rolling_quantile":
                             t1 = f[0](df_array, f[1], f[2])[-1]
                         else:
