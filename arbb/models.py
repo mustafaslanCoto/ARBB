@@ -1,3663 +1,1425 @@
-import pandas as pd
-import numpy as np
-from numba import jit
+#!/usr/bin/env python3
+"""
+ML Forecasting Package
+=======================
 
-from sklearn.model_selection import TimeSeriesSplit
+This module contains various forecasting classes (using CatBoost, LightGBM, XGBoost,
+RandomForest, etc.) and utility functions for cross-validation and hyperparameter
+tuning for time-series forecasting.
+"""
+
+from tabnanny import verbose
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from sklearn.linear_model import LinearRegression
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from sklearn.model_selection import TimeSeriesSplit, KFold
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, HistGradientBoostingRegressor
+from arbb.utils import box_cox_transform, back_box_cox_transform, undiff_ts, seasonal_diff, invert_seasonal_diff, kfold_target_encoder, target_encoder_for_test
 from catboost import CatBoostRegressor
 from cubist import Cubist
-from sklearn.linear_model import LinearRegression, Lasso, Ridge
-from arbb.stats import box_cox_transform, back_box_cox_transform, undiff_ts, seasonal_diff, invert_seasonal_diff
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from datetime import timedelta
-from sklearn.model_selection import KFold
 
-# Catboost Forecaster
-class cat_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
-                 differencing_number = None, seasonal_length = None, cat_variables = None,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = CatBoostRegressor
+
+class ml_forecaster:
+    """
+    ml Forecaster for time series forecasting.
+
+    Args:
+        model (class): Machine learning model class (e.g., CatBoostRegressor, LGBMRegressor).
+        target_col (str): Name of the target variable.
+        cat_variables (list, optional): List of categorical features.
+        n_lag (list or int, optional): Lag(s) to include as features.
+        difference (int, optional): Order of difference (e.g. 1 for first difference).
+        seasonal_length (int, optional): Seasonal period for seasonal differencing.
+        trend (bool, optional): Whether to remove trend.
+        trend_type (str, optional): Type of trend removal ('linear', 'feature_lr', 'ses', 'feature_ses').
+        ets_params (tuple, optional): A tuple (model_params, fit_params) for exponential smoothing. Ex.g. ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}).
+        box_cox (bool, optional): Whether to perform a Box–Cox transformation.
+        box_cox_lmda (float, optional): The lambda value for Box–Cox.
+        box_cox_biasadj (bool, optional): If True, adjust bias after Box–Cox inversion. Default is False.
+        lag_transform (dict, optional): Dictionary specifying additional lag transformations.
+    """
+    def __init__(self, model, target_col, cat_variables=None, n_lag=None, difference=None, seasonal_diff=None,
+                 trend=False, trend_type="linear", ets_params=None, box_cox=False, box_cox_lmda=None,
+                 box_cox_biasadj=False, lag_transform=None):
+        # Validate that either n_lag or lag_transform is provided
+        if n_lag is None and lag_transform is None:
+            raise ValueError("You must supply either n_lag or lag_transform parameters")
+            
         self.target_col = target_col
         self.cat_var = cat_variables
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
-        self.trend = add_trend
+        self.n_lag = n_lag  # single integer or list of lags
+        self.difference = difference
+        self.season_diff = seasonal_diff
+        self.trend = trend
         self.trend_type = trend_type
         if ets_params is not None:
             self.ets_model = ets_params[0]
             self.ets_fit = ets_params[1]
         self.box_cox = box_cox
-        self.lmda = box_cox_lmda
+        self.lamda = box_cox_lmda
         self.biasadj = box_cox_biasadj
+        self.lag_transform = lag_transform
+        
+        # Set default tuned parameters and placeholders for fitted attributes
         self.tuned_params = None
         self.actuals = None
         self.prob_forecasts = None
+        self.model = model  # the chosen ML model
 
+        if self.model.__name__ in ["CatBoostRegressor", "LGBMRegressor"]:
+        
+            def data_prep(self, df):
+                """
+                Prepare the data with lag features, differencing, trend-removal, and Box–Cox transformation.
 
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.box_cox == True:
-            self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-            trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-            dfc[self.target_col] = trans_data
+                Args:
+                    df (pd.DataFrame): Input dataframe.
 
+                Returns:
+                    pd.DataFrame: Dataframe ready for model fitting.
+                """
+                dfc = df.copy()
+                # Box-Cox transformation if flag is set
+                if self.box_cox:
+                    self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
+                    trans_data, self.lamda = box_cox_transform(x=dfc[self.target_col],
+                                                                shift=self.is_zero,
+                                                                box_cox_lmda=self.lamda)
+                    dfc[self.target_col] = trans_data
 
-        if self.trend ==True:
-            self.len = len(dfc)
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                if self.trend_type == "linear":
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                # Detrend if required
+                if self.trend:
+                    self.len = len(dfc)
+                    if self.trend_type in ["linear", "feature_lr"]:
+                        self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1),
+                                                                dfc[self.target_col])
+                        if self.trend_type == "linear":
+                            # Remove trend component directly from target
+                            dfc[self.target_col] = dfc[self.target_col] - self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                    elif self.trend_type in ["ses", "feature_ses"]:
+                        # Apply simple exponential smoothing detrending
+                        self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                        if self.trend_type == "ses":
+                            dfc[self.target_col] = dfc[self.target_col] - self.ses_model.fittedvalues.values
 
-            if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                if self.trend_type == "ses":
-                    dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
-
-        if (self.difference is not None)|(self.season_diff is not None):
-            self.orig = dfc[self.target_col].tolist()
-            if self.difference is not None:
-                dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                # Apply ordinary differencing if needed
+                if self.difference is not None:
+                    self.orig = dfc[self.target_col].tolist()
+                    dfc[self.target_col] = np.diff(dfc[self.target_col], n=self.difference,
+                                                prepend=np.repeat(np.nan, self.difference))
+                # Apply seasonal differencing if needed
                 if self.season_diff is not None:
                     self.orig_d = dfc[self.target_col].tolist()
                     dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
-
-        if self.cat_var is not None:
-            for c in self.cat_var:
-                dfc[c] = dfc[c].astype('str')
-        if self.n_lag is not None:
-            for i in self.n_lag:
-                dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
-            
-        if self.lag_transform is not None:
-            for n, k in self.lag_transform.items():
-                df_array = np.array(dfc[self.target_col].shift(n))
-                for f in k:
-                    if not isinstance(f, tuple):
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                    elif f[0].__name__ == "rolling_quantile":
-                        dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
-                    else:
-                        dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-                        
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-                
-        dfc = dfc.dropna()
-        # if self.target_col in dfc.columns:
-        #     self.dfc = dfc
-        #     self.df =df.loc[dfc.index]
-        # else:
-        return dfc
-
-
-    
-    def fit(self, df, param = None):
-        if param is not None:
-            model_ = self.model(**param)
-        else:
-            model_ = self.model()
-
-        model_df = self.data_prep(df)
-        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        # self.data_prep(df)
-        # self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
-        self.model_fit = model_.fit(self.X, self.y, cat_features=self.cat_var, verbose = True)
-    
-    def forecast(self, n_ahead, x_test = None):
-        lags = self.y.tolist()
-        predictions = []
-
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_test.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-            if self.n_lag is not None:
-                inp_lag = [lags[-j] for j in self.n_lag]
-            else:
-                inp_lag = []
-                
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
-                        else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-            else:
-                trend_var = []
-
-            inp = x_var + inp_lag+transform_lag+trend_var
-            pred = self.model_fit.predict(inp)
-            predictions.append(pred)
-            lags.append(pred)
-
-        
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
-
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
-
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts
-        forecasts = np.array([max(0, x) for x in forecasts])
-
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-    
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {i.__name__:[] for i in metrics}
-
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-class lightGBM_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
-                 differencing_number = None,seasonal_length = None, cat_variables = None, target_encode=False,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = LGBMRegressor
-        self.target_col = target_col
-        self.cat_var = cat_variables
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
-        self.trend = add_trend
-        self.trend_type = trend_type
-        if ets_params is not None:
-            self.ets_model = ets_params[0]
-            self.ets_fit = ets_params[1]
-        self.box_cox = box_cox
-        self.lmda = box_cox_lmda
-        self.biasadj = box_cox_biasadj
-        self.tuned_params = None
-        self.actuals = None
-        self.prob_forecasts = None
-        self.target_encode = target_encode
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-
-        if self.cat_var is not None:
-            if self.target_encode ==True:
-                for i in self.cat_var:
-                    encode_col = i+"_target_encoded"
-                    dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
-                self.df_encode = dfc.copy()
-                dfc = dfc.drop(columns = self.cat_var)
-            else:
-                for c in self.cat_var:
-                    dfc[c] = dfc[c].astype('category')
-
-        if self.box_cox == True:
-            self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-            trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-            dfc[self.target_col] = trans_data
-
-        if (self.trend ==True):
-            self.len = len(dfc)
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                if (self.trend_type == "linear"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-            if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                if (self.trend_type == "ses"):
-                    dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
-
-        if (self.difference is not None)|(self.season_diff is not None):
-            self.orig = dfc[self.target_col].tolist()
-            if self.difference is not None:
-                dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
-            if self.season_diff is not None:
-                self.orig_d = dfc[self.target_col].tolist()
-                dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
-                
-        if self.n_lag is not None:
-            for i in self.n_lag:
-                dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
-            
-        if self.lag_transform is not None:
-            for n, k in self.lag_transform.items():
-                df_array = np.array(dfc[self.target_col].shift(n))
-                for f in k:
-                    if not isinstance(f, tuple):
-                        if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                            arr2 = np.array(dfc[self.target_col])
-                            dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                    elif f[0].__name__ == "rolling_quantile":
-                        dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
-                    else:
-                        dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-            
-        dfc = dfc.dropna()
-
-        return dfc
-    
-    def fit(self, df, param = None):
-
-        if param is not None:
-            model_ = self.model(**param, verbose=-1)
-        else:
-            model_ = self.model(verbose=-1)
-
-        model_df = self.data_prep(df)
-        self.X, self.y = model_df.drop(columns =self.target_col), model_df[self.target_col]
-        # self.data_prep(df)
-        # self.X, self.y = self.dfc.drop(columns =self.target_col), self.dfc[self.target_col]
-        if self.target_encode == False:
-            self.model_fit = model_.fit(self.X, self.y, categorical_feature=self.cat_var)
-        else:
-            self.model_fit = model_.fit(self.X, self.y)
-    
-    def forecast(self, n_ahead, x_test = None):
-        lags = self.y.tolist()
-        predictions = []
-
-        if (self.cat_var is not None) & (self.target_encode ==True):
-            for c in self.cat_var:
-                encode_col = c+"_target_encoded"
-                x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
-            x_test = x_test.drop(columns = self.cat_var)
-
-
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_test.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-            if self.n_lag is not None:
-                inp_lag = [lags[-i] for i in self.n_lag]
-            else:
-                inp_lag = []
-                
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
-                        else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-            else:
-                trend_var = []
                     
-                    
-            inp = x_var+inp_lag+transform_lag+trend_var
-
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-            for i in df_inp.columns:
+                # Process categorical variables if provided
                 if self.cat_var is not None:
-                    if i in self.cat_var:
-                        df_inp[i] = df_inp[i].astype('category')
-                    else:
-                        df_inp[i] = df_inp[i].astype('float64')
-                else:
-                    df_inp[i] = df_inp[i].astype('float64')
-            pred = self.model_fit.predict(df_inp)[0]
-            predictions.append(pred)
-            lags.append(pred)
-
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
-
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
-
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts
-
-        forecasts = np.array([max(0, x) for x in forecasts])   
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-    
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {m.__name__: [] for m in metrics}
-        self.cv_df = pd.DataFrame()
-        self.cv_forecats_df= pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            cv_tr_df = pd.DataFrame({"feat_name":self.model_fit.feature_name_, "importance":self.model_fit.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-            
-class xgboost_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
-                 differencing_number = None, seasonal_length = None, cat_variables = None, target_encode=False,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = XGBRegressor
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend = add_trend
-        self.trend_type = trend_type
-        if ets_params is not None:
-            self.ets_model = ets_params[0]
-            self.ets_fit = ets_params[1]
-        self.box_cox = box_cox
-        self.lmda = box_cox_lmda
-        self.biasadj = box_cox_biasadj
-        self.tuned_params = None
-        self.actuals = None
-        self.prob_forecasts = None
-        self.target_encode = target_encode
-
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-
-        if self.cat_variables is not None:
-            if self.target_encode ==True:
-                for i in self.cat_variables:
-                    encode_col = i+"_target_encoded"
-                    dfc[encode_col] = kfold_target_encoder(dfc, i, self.target_col, 36)
-                self.df_encode = dfc.copy()
-                dfc = dfc.drop(columns = self.cat_variables)
-                
-            else:
-                for col, cat in self.cat_var.items():
-                    dfc[col] = dfc[col].astype('category')
-                    dfc[col] = dfc[col].cat.set_categories(cat)
-                dfc = pd.get_dummies(dfc)
-
-                for i in self.drop_categ:
-                    dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col in dfc.columns):
-            if self.box_cox == True:
-                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-                dfc[self.target_col] = trans_data
-            
-            if (self.trend ==True):
-                self.len = len(dfc)
-                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                    if (self.trend_type == "linear"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                    if (self.trend_type == "ses"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
-
-            if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = dfc[self.target_col].tolist()
-                if self.difference is not None:
-                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
-                if self.season_diff is not None:
-                    self.orig_d = dfc[self.target_col].tolist()
-                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
-
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
-                
-            if self.lag_transform is not None:
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(dfc[self.target_col].shift(n))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(dfc[self.target_col])
-                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                        elif f[0].__name__ == "rolling_quantile":
-                            dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
-                        else:
-                            dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-                            
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-        dfc = dfc.dropna()
-
-
-        # if self.target_col in dfc.columns:
-        #     self.dfc = dfc
-        #     self.df =df.loc[dfc.index]
-        # else:
-        return dfc
-
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_ =self.model(**param)
-        else:
-            model_ =self.model()
-        if self.cat_variables is not None:
-            if self.target_encode == False:
-                self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-                self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        
-        model_train = self.data_prep(df)
-        self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-
-        self.model_fit = model_.fit(self.X, self.y, verbose = True)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            if self.cat_variables is not None:
-                if self.target_encode ==True:
-                    for c in self.cat_variables:
-                        encode_col = c+"_target_encoded"
-                        x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, c)
-                    x_dummy = x_test.drop(columns = self.cat_variables)
-                else:
-                    x_dummy = self.data_prep(x_test)
-        lags = self.y.tolist()
-        predictions = []
-
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables
-                # if self.forecast_type =="recursive":
-                #     inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables
-                # elif self.forecast_type =="direct":
-                #     lag_direct = [i-self.n_lag[0]+1 for i in self.n_lag]
-                #     inp_lag = [lags[-l] for l in lag_direct] # to get defined lagged variables
-            else:
-                inp_lag = []
-
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
-                        else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-                
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-            else:
-                trend_var = [] 
-                    
-            inp = x_var+inp_lag+transform_lag+trend_var
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-
-            pred = self.model_fit.predict(df_inp)[0]
-            predictions.append(pred)
-            lags.append(pred)
-
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
-
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
-
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts   
-        forecasts = np.array([max(0, x) for x in forecasts])    
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-    
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {m.__name__: [] for m in metrics}
-        self.cv_df = pd.DataFrame()
-        self.cv_forecats_df= pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            cv_tr_df = pd.DataFrame({"feat_name":self.model_fit.feature_names_in_, "importance":self.model_fit.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-    
-class RandomForest_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="linear", ets_params = None, n_lag=None, lag_transform = None,
-                 differencing_number = None, seasonal_length = None, cat_variables = None,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = RandomForestRegressor
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend = add_trend
-        self.trend_type = trend_type
-        if ets_params is not None:
-            self.ets_model = ets_params[0]
-            self.ets_fit = ets_params[1]
-        self.box_cox = box_cox
-        self.lmda = box_cox_lmda
-        self.biasadj = box_cox_biasadj
-        self.tuned_params = None
-        self.actuals = None
-        self.prob_forecasts = None
-        
-    
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.cat_variables is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-
-        if (self.target_col in dfc.columns):
-
-            if self.box_cox == True:
-                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-                dfc[self.target_col] = trans_data
-            
-            if (self.trend ==True):
-                self.len = len(dfc)
-                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                    if (self.trend_type == "linear"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-    
-                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                    if (self.trend_type == "ses"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
+                    for col in self.cat_var:
+                        dfc[col] = dfc[col].astype('category')
                         
-            if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = dfc[self.target_col].tolist()
-                if self.difference is not None:
-                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                # Create lag features using n_lag parameter
+                if self.n_lag is not None:
+                    if isinstance(self.n_lag, int):
+                        lags = range(1, self.n_lag+1)
+                    else:
+                        lags = self.n_lag
+                    for lag in lags:
+                        dfc[f"{self.target_col}_lag_{lag}"] = dfc[self.target_col].shift(lag)
+                        
+                # Apply additional lag transformations if specified
+                if self.lag_transform is not None:
+                    for n, funcs in self.lag_transform.items():
+                        df_array = np.array(dfc[self.target_col].shift(n))
+                        for func in funcs:
+                            # Check if function uses a tuple structure for additional parameters
+                            if isinstance(func, tuple):
+                                if func[0].__name__ == "rolling_quantile":
+                                    dfc[f"q_{func[2]}_{n}_{func[1]}"] = func[0](df_array, func[1], func[2])
+                                else:
+                                    dfc[f"{func[0].__name__}_{n}_{func[1]}"] = func[0](df_array, func[1])
+                            else:
+                                dfc[f"{func.__name__}_{n}"] = func(np.array(dfc[self.target_col]), n)
+                                
+                # Add trend features if using "feature_lr" or "feature_ses"
+                if self.trend:
+                    # if (self.target_col in dfc.columns):
+                    if self.trend_type == "feature_lr":
+                        dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                    elif self.trend_type == "feature_ses":
+                        dfc["trend"] = self.ses_model.fittedvalues.values
+
+                # Drop rows with missing values due to differencing/lagging
+                return dfc.dropna()
+
+            def fit(self, df, param=None):
+                """
+                Fit the ml model.
+
+                Args:
+                    df (pd.DataFrame): Input dataframe.
+                    param (dict, optional): Parameters to pass into the model.
+                """
+                # Choose model parameters if provided
+                if self.model.__name__ == "LGBMRegressor":
+                    model_ = self.model(**param, verbose=-1) if param is not None else self.model(verbose=-1)
+                else:
+                    model_ = self.model(**param) if param is not None else self.model()
+                model_df = self.data_prep(df)
+                self.X = model_df.drop(columns=[self.target_col])
+                self.y = model_df[self.target_col]
+                # Fit the model (passing the categorical features if provided)
+                if self.model.__name__ == "LGBMRegressor":
+                    self.model_fit = model_.fit(self.X, self.y, categorical_feature=self.cat_var)
+                else:
+                    self.model_fit = model_.fit(self.X, self.y, cat_features=self.cat_var, verbose=True)
+
+            def forecast(self, n_ahead, x_test=None):
+                """
+                Forecast n_ahead time steps.
+
+                Args:
+                    n_ahead (int): Number of forecast steps.
+                    x_test (pd.DataFrame, optional): Exogenous variables for forecasting.
+
+                Returns:
+                    np.array: Forecasted values.
+                """
+                lags = self.y.tolist() # to keep the latest values for lag features
+                predictions = []
+                
+                # Compute trend forecasts if needed
+                if self.trend:
+                    if self.trend_type in ["linear", "feature_lr"]:
+                        trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
+                    elif self.trend_type in ["ses", "feature_ses"]:
+                        trend_pred = self.ses_model.forecast(n_ahead).values
+
+                for i in range(n_ahead):
+                    # If external regressors are provided, extract the i-th row
+                    if x_test is not None:
+                        x_var = x_test.iloc[i, :].tolist()
+                    else:
+                        x_var = []
+                        
+                    # Build lag-based features from the latest forecast–history
+                    if self.n_lag is not None:
+                        if isinstance(self.n_lag, int):
+                            lags_used = range(1, self.n_lag+1)
+                        else:
+                            lags_used = self.n_lag
+                        inp_lag = [lags[-lag] for lag in lags_used]
+                    else:
+                        inp_lag = []
+                    
+                    # Similarly compute additional lag transforms if available
+                    if self.lag_transform is not None:
+                        transform_lag = []
+                        for n, funcs in self.lag_transform.items():
+                            series_array = np.array(pd.Series(lags).shift(n-1))
+                            for func in funcs:
+                                if isinstance(func, tuple):
+                                    if func[0].__name__ == "rolling_quantile":
+                                        t1 = func[0](series_array, func[1], func[2])[-1]
+                                    else:
+                                        t1 = func[0](series_array, func[1])[-1]
+                                else:
+                                    t1 = func(series_array, n)[-1]
+                                transform_lag.append(t1)
+                    else:
+                        transform_lag = []
+                        
+                    # If using trend as a feature, add the forecasted trend component
+                    if (self.trend) and (self.trend_type in ["feature_lr", "feature_ses"]):
+                        trend_var = [trend_pred[i]]
+                    else:
+                        trend_var = []
+                    
+                    # Concatenate all features for the forecast step
+                    inp = x_var + inp_lag + transform_lag + trend_var
+                    # Ensure that the input is a DataFrame with the same columns as the training data
+                    df_inp = pd.DataFrame(np.array(inp).reshape(1, -1), columns=self.X.columns)
+                    # Get the forecast via the model
+                    pred = self.model_fit.predict(df_inp)
+                    predictions.append(pred)
+                    lags.append(pred)  # update lag history
+
+                forecasts = np.array(predictions)
+                # Revert seasonal differencing if applied
                 if self.season_diff is not None:
-                    self.orig_d = dfc[self.target_col].tolist()
-                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
-
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
-                
-            if self.lag_transform is not None:
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(dfc[self.target_col].shift(n))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(dfc[self.target_col])
-                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                        elif f[0].__name__ == "rolling_quantile":
-                            dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
-                        else:
-                            dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-                            
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-        dfc = dfc.dropna()
-
-
-        # if self.target_col in dfc.columns:
-        #     self.dfc = dfc
-        #     self.df =df.loc[dfc.index]
-        # else:
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_ =self.model(**param)
-        else:
-            model_ =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        # model_df = self.data_prep(df)
-        model_train = self.data_prep(df)
-        self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-        self.model_fit = model_.fit(self.X, self.y)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-#         max_lag = self.n_lag[-1]
-#         lags = self.y[-max_lag:].tolist()
-        lags = self.y.tolist()
-        predictions = []
-
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
-            else:
-                inp_lag = []
-
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
-                        else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-                
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-
-            else:
-                trend_var = []
-                    
-                    
-            inp = x_var+inp_lag+transform_lag+trend_var
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-
-            pred = self.model_fit.predict(df_inp)[0]
-            predictions.append(pred)
-            lags.append(pred)
-
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
-
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
-
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts
-
-        forecasts = np.array([max(0, x) for x in forecasts])      
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-    
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {m.__name__: [] for m in metrics}
-        self.cv_df = pd.DataFrame()
-        self.cv_forecats_df= pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            cv_tr_df = pd.DataFrame({"feat_name":self.model_fit.feature_names_in_, "importance":self.model_fit.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-    
-class AdaBoost_forecaster:
-    def __init__(self, target_col,add_trend = False, trend_type ="linear", ets_params = None, n_lag=None, lag_transform = None,
-                 differencing_number = None, seasonal_length = None, cat_variables = None,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = AdaBoostRegressor
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend = add_trend
-        self.trend_type = trend_type
-        if ets_params is not None:
-            self.ets_model = ets_params[0]
-            self.ets_fit = ets_params[1]
-        self.box_cox = box_cox
-        self.lmda = box_cox_lmda
-        self.biasadj = box_cox_biasadj
-        self.tuned_params = None
-        self.actuals = None
-        self.prob_forecasts = None
-
-
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-            
-        if self.cat_variables is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col in dfc.columns):
-
-            if self.box_cox == True:
-                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-                dfc[self.target_col] = trans_data
-            
-            if (self.trend ==True):
-                self.len = len(dfc)
-                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                    if (self.trend_type == "linear"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-    
-                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                    if (self.trend_type == "ses"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
-                
-            if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = dfc[self.target_col].tolist()
+                    forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
+                # Revert ordinary differencing if applied
                 if self.difference is not None:
-                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
-                if self.season_diff is not None:
-                    self.orig_d = dfc[self.target_col].tolist()
-                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
+                    forecasts = undiff_ts(self.orig, forecasts, self.difference)
+                # Add static trend back if required
+                if (self.trend) and (self.trend_type in ["linear","ses"]):
+                    forecasts = trend_pred + forecasts
+                # Ensure forecasts are nonnegative
+                forecasts = np.array([max(0, x) for x in forecasts])
+                # Finally, invert Box-Cox transform if it was applied
+                if self.box_cox:
+                    forecasts = back_box_cox_transform(y_pred=forecasts, lmda=self.lamda,
+                                                        shift=self.is_zero,
+                                                        box_cox_biasadj=self.biasadj)
+                return forecasts
 
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
+            def cv(self, df, cv_split, test_size, metrics, params=None):
+                """
+                Run cross-validation using time series splits.
+
+                Args:
+                    df (pd.DataFrame): Input data.
+                    cv_split (int): Number of splits in TimeSeriesSplit.
+                    test_size (int): Size of test window.
+                    metrics (list): List of metric functions.
+                    params (dict, optional): Model parameters.
                 
-            if self.lag_transform is not None:
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(dfc[self.target_col].shift(n))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(dfc[self.target_col])
-                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                        elif f[0].__name__ == "rolling_quantile":
-                            dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
+                Returns:
+                    pd.DataFrame: Performance metrics for CV.
+                """
+                tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+                self.metrics_dict = {m.__name__: [] for m in metrics}
+                for train_index, test_index in tscv.split(df):
+                    train, test = df.iloc[train_index], df.iloc[test_index]
+                    x_test = test.drop(columns=[self.target_col])
+                    y_test = np.array(test[self.target_col])
+                    if params is not None:
+                        self.fit(train, param=params)
+                    else:
+                        self.fit(train)
+                    bb_forecast = self.forecast(test_size, x_test=x_test)
+                    # Evaluate each metric
+                    for m in metrics:
+                        if m.__name__ == 'mean_squared_error':
+                            eval_val = m(y_test, bb_forecast, squared=False)
+                        elif m.__name__ in ['MeanAbsoluteScaledError', 'MedianAbsoluteScaledError']:
+                            eval_val = m(y_test, bb_forecast, np.array(train[self.target_col]))
                         else:
-                            dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-                            
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
+                            eval_val = m(y_test, bb_forecast)
+                        self.metrics_dict[m.__name__].append(eval_val)
+                overall_performance = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]
+                return pd.DataFrame(overall_performance).rename(columns={0: "eval_metric", 1: "score"})
 
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-        dfc = dfc.dropna()
-
-
-        # if self.target_col in dfc.columns:
-        #     self.dfc = dfc
-        #     self.df =df.loc[dfc.index]
-        # else:
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_ =self.model(**param)
         else:
-            model_ =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_train = self.data_prep(df)
-        self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-        self.model_fit = model_.fit(self.X, self.y)
+            def data_prep(self, df):
+                """
+                Prepare the data and handle categorical encoding, lag generation, trend removal, and differencing.
 
-    def forecast(self, n_ahead, x_test = None):
-        self.H = n_ahead
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        lags = self.y.tolist()
-        predictions = []
-        
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-            
-        for i in range(n_ahead):
+                Args:
+                    df (pd.DataFrame): Raw input dataframe.
 
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
-            else:
-                inp_lag = []
+                Returns:
+                    pd.DataFrame: Processed dataframe.
+                """
+                dfc = df.copy()
+                # Handle categorical variables
+                if self.cat_variables is not None:
+                    if self.target_encode ==True:
+                        for col in self.cat_variables:
+                            encode_col = col+"_target_encoded"
+                            dfc[encode_col] = kfold_target_encoder(dfc, col, self.target_col, 36)
+                        self.df_encode = dfc.copy()
+                        dfc = dfc.drop(columns = self.cat_variables)
+                    # If target encoding is not used, convert categories to dummies    
+                    else:
+                        for col, cat in self.cat_var.items():
+                            dfc[col] = dfc[col].astype('category')
+                            # Set categories for categorical columns
+                            dfc[col] = dfc[col].cat.set_categories(cat)
+                        dfc = pd.get_dummies(dfc)
 
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
+                        for i in self.drop_categ:
+                            dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+
+                if self.target_col in dfc.columns:
+                    # Apply Box–Cox transformation if specified
+                    if self.box_cox:
+                        self.is_zero = np.any(np.array(dfc[self.target_col]) < 1) # check for zero or negative values
+                        trans_data, self.lmda = box_cox_transform(x=dfc[self.target_col],
+                                                                shift=self.is_zero,
+                                                                box_cox_lmda=self.lmda)
+                        dfc[self.target_col] = trans_data
+                    # Detrend the series if specified
+                    if self.trend:
+                        self.len = len(dfc)
+                        if self.trend_type in ["linear", "feature_lr"]:
+                            self.lr_model = LinearRegression().fit(np.arange(self.len).reshape(-1, 1), dfc[self.target_col])
+                            if self.trend_type == "linear":
+                                dfc[self.target_col] = dfc[self.target_col] - self.lr_model.predict(np.arange(self.len).reshape(-1, 1))
+                        if self.trend_type in ["ses", "feature_ses"]:
+                            self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
+                            if self.trend_type == "ses":
+                                dfc[self.target_col] = dfc[self.target_col] - self.ses_model.fittedvalues.values
+
+                    # Apply differencing if specified
+                    if self.difference is not None or self.season_diff is not None:
+                        self.orig = dfc[self.target_col].tolist()
+                        if self.difference is not None:
+                            dfc[self.target_col] = np.diff(dfc[self.target_col], n=self.difference,
+                                                        prepend=np.repeat(np.nan, self.difference))
+                        if self.season_diff is not None:
+                            self.orig_d = dfc[self.target_col].tolist()
+                            dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
+
+                    # Create lag features based on n_lag parameter
+                    if self.n_lag is not None:
+                        if isinstance(self.n_lag, int):
+                            lags = range(1, self.n_lag + 1)
                         else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-                
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-            else:
-                trend_var = []
-                    
-                    
-            inp = x_var+inp_lag+transform_lag+trend_var
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
+                            lags = self.n_lag
+                        for lag in lags:
+                            dfc[f"{self.target_col}_lag_{lag}"] = dfc[self.target_col].shift(lag)
+                    # Create additional lag transformations if specified
+                    if self.lag_transform is not None:
+                        for n, funcs in self.lag_transform.items():
+                            df_array = np.array(dfc[self.target_col].shift(n))
+                            for func in funcs:
+                                if isinstance(func, tuple):
+                                    if func[0].__name__ == "rolling_quantile":
+                                        dfc[f"q_{func[2]}_{n}_{func[1]}"] = func[0](df_array, func[1], func[2])
+                                    else:
+                                        dfc[f"{func[0].__name__}_{n}_{func[1]}"] = func[0](df_array, func[1])
+                                else:
+                                    dfc[f"{func.__name__}_{n}"] = func(np.array(dfc[self.target_col]), n)
+                if self.trend:
+                    if self.target_col in dfc.columns:
+                        if self.trend_type == "feature_lr":
+                            dfc["trend"] = self.lr_model.predict(np.arange(self.len).reshape(-1, 1))
+                        if self.trend_type == "feature_ses":
+                            dfc["trend"] = self.ses_model.fittedvalues.values
+                return dfc.dropna()
 
-            pred = self.model_fit.predict(df_inp)[0]
-            predictions.append(pred)
-            lags.append(pred)
+            def fit(self, df, param=None):
+                """
+                Fit the ml model.
 
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
+                Args:
+                    df (pd.DataFrame): Input dataframe.
+                    param (dict, optional): Parameters for XGBRegressor.
+                """
 
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
+                model_ = self.model(**param) if param is not None else self.model()
+                if self.cat_variables is not None and not self.target_encode:
+                    # If categorical variables are provided, create a dictionary of categories
+                    self.cat_var = {c: sorted(df[c].drop_duplicates().tolist()) for c in self.cat_variables}
+                    # Create a list of the first category for each categorical variable
+                    self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+                model_train = self.data_prep(df)
+                self.X = model_train.drop(columns=self.target_col)
+                self.y = model_train[self.target_col]
+                self.model_fit = model_.fit(self.X, self.y, verbose=True)
 
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts
+            def forecast(self, n_ahead, x_test=None):
+                """
+                Forecast future values for n_ahead periods.
 
-        forecasts = np.array([max(0, x) for x in forecasts])  
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-    
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {m.__name__: [] for m in metrics}
-        self.cv_df = pd.DataFrame()
-        self.cv_forecats_df= pd.DataFrame()
+                Args:
+                    n_ahead (int): Number of periods to forecast.
+                    x_test (pd.DataFrame, optional): Exogenous variables.
 
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            cv_tr_df = pd.DataFrame({"feat_name":self.model_fit.feature_names_in_, "importance":self.model_fit.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-    
-class Cubist_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None,
-                 differencing_number = None,seasonal_length = None, cat_variables = None,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = Cubist
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend = add_trend
-        self.trend_type = trend_type
-        if ets_params is not None:
-            self.ets_model = ets_params[0]
-            self.ets_fit = ets_params[1]
-        self.box_cox = box_cox
-        self.lmda = box_cox_lmda
-        self.biasadj = box_cox_biasadj
-        self.tuned_params = None
-        self.actuals = None
-        self.prob_forecasts = None
-
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-            
-        if self.cat_variables is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col in dfc.columns):
-
-            if self.box_cox == True:
-                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-                dfc[self.target_col] = trans_data
-            
-            if (self.trend ==True):
-                self.len = len(dfc)
-                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                    if (self.trend_type == "linear"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-    
-                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                    if (self.trend_type == "ses"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
-                
-            if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = dfc[self.target_col].tolist()
+                Returns:
+                    np.array: Forecasted values.
+                """
+                if x_test is not None:  # if external regressors are provided
+                    if self.cat_variables and self.target_encode:
+                        for col in self.cat_variables:
+                            encode_col = col + "_target_encoded"
+                            x_test[encode_col] = target_encoder_for_test(self.df_encode, x_test, col)
+                        x_dummy = x_test.drop(columns=self.cat_variables)
+                    else:
+                        x_dummy = self.data_prep(x_test)
+                lags = self.y.tolist()
+                predictions = []
+                if self.trend:
+                    if self.trend_type in ["linear", "feature_lr"]:
+                        trend_pred = self.lr_model.predict(np.arange(self.len, self.len + n_ahead).reshape(-1, 1))
+                    elif self.trend_type in ["ses", "feature_ses"]:
+                        trend_pred = self.ses_model.forecast(n_ahead).values
+                # Forecast recursively one step at a time
+                for i in range(n_ahead):
+                    if x_test is not None:
+                        x_var = x_dummy.iloc[i, :].tolist()
+                    else:
+                        x_var = []
+                    if self.n_lag is not None:
+                        if isinstance(self.n_lag, int):
+                            lags_used = range(1, self.n_lag + 1)
+                        else:
+                            lags_used = self.n_lag
+                        inp_lag = [lags[-lag] for lag in lags_used]
+                    else:
+                        inp_lag = []
+                    if self.lag_transform is not None:
+                        transform_lag = []
+                        for n, funcs in self.lag_transform.items():
+                            series_array = np.array(pd.Series(lags).shift(n - 1))
+                            for func in funcs:
+                                if not isinstance(func, tuple):
+                                    t1 = func(np.array(lags), n - 1)[-1]
+                                else:
+                                    if func[0].__name__ == "rolling_quantile":
+                                        t1 = func[0](series_array, func[1], func[2])[-1]
+                                    else:
+                                        t1 = func[0](series_array, func[1])[-1]
+                                transform_lag.append(t1)
+                    else:
+                        transform_lag = []
+                    if self.trend:
+                        if self.trend_type in ["feature_lr", "feature_ses"]:
+                            trend_var = [trend_pred[i]]
+                        else:
+                            trend_var = []
+                    else:
+                        trend_var = []
+                    inp = x_var + inp_lag + transform_lag + trend_var
+                    df_inp = pd.DataFrame(inp).T
+                    df_inp.columns = self.X.columns
+                    pred = self.model_fit.predict(df_inp)[0]
+                    predictions.append(pred)
+                    lags.append(pred)
+                forecasts = np.array(predictions)
+                # Revert seasonal differencing if applied
+                if self.season_diff is not None:
+                    forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
                 if self.difference is not None:
-                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
-                if self.season_diff is not None:
-                    self.orig_d = dfc[self.target_col].tolist()
-                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
+                    forecasts = undiff_ts(self.orig, forecasts, self.difference)
+                if self.trend and self.trend_type in ["linear", "ses"]:
+                    forecasts = trend_pred + forecasts
+                forecasts = np.array([max(0, x) for x in forecasts])
+                if self.box_cox:
+                    forecasts = back_box_cox_transform(y_pred=forecasts,
+                                                    lmda=self.lmda,
+                                                    shift=self.is_zero,
+                                                    box_cox_biasadj=self.biasadj)
+                return forecasts
 
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
-                
-            if self.lag_transform is not None:
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(dfc[self.target_col].shift(n))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(dfc[self.target_col])
-                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                        elif f[0].__name__ == "rolling_quantile":
-                            dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
+            def cv(self, df, cv_split, test_size, metrics, params=None):
+                """
+                Cross-validate the XGBoost model with time series split.
+
+                Args:
+                    df (pd.DataFrame): Input dataframe.
+                    cv_split (int): Number of folds.
+                    test_size (int): Forecast window for each split.
+                    metrics (list): List of evaluation metric functions.
+                    params (dict, optional): Hyperparameters for model training.
+
+                Returns:
+                    pd.DataFrame: CV performance metrics.
+                """
+                tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+                self.metrics_dict = {m.__name__: [] for m in metrics}
+                self.cv_df = pd.DataFrame()
+                self.cv_forecats_df = pd.DataFrame()
+                for i, (train_index, test_index) in enumerate(tscv.split(df)):
+                    train, test = df.iloc[train_index], df.iloc[test_index]
+                    x_test = test.drop(columns=self.target_col)
+                    y_test = np.array(test[self.target_col])
+                    if params is not None:
+                        self.fit(train, param=params)
+                    else:
+                        self.fit(train)
+                    forecast_vals = self.forecast(test_size, x_test=x_test)
+                    forecat_df = test[self.target_col].to_frame()
+                    forecat_df["forecasts"] = forecast_vals
+                    self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
+                    for m in metrics:
+                        if m.__name__ == 'mean_squared_error':
+                            val = m(y_test, forecast_vals, squared=False)
+                        elif m.__name__ in ['MeanAbsoluteScaledError', 'MedianAbsoluteScaledError']:
+                            val = m(y_test, forecast_vals, np.array(train[self.target_col]))
                         else:
-                            dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-                            
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-        dfc = dfc.dropna()
-
-
-        # if self.target_col in dfc.columns:
-        #     self.dfc = dfc
-        #     self.df =df.loc[dfc.index]
-        # else:
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_ =self.model(**param)
-        else:
-            model_ =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_train = self.data_prep(df)
-        self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-        self.model_fit = model_.fit(self.X, self.y)
-
-    def forecast(self, n_ahead, x_test = None):
-        self.H = n_ahead
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        lags = self.y.tolist()
-        predictions = []
+                            val = m(y_test, forecast_vals)
+                        self.metrics_dict[m.__name__].append(val)
+                    cv_tr_df = pd.DataFrame({"feat_name": self.model_fit.feature_names_in_, 
+                                            "importance": self.model_fit.feature_importances_}).sort_values(by="importance", ascending=False)
+                    cv_tr_df["fold"] = i
+                    self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+                overall = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]
+                return pd.DataFrame(overall).rename(columns={0: "eval_metric", 1: "score"})
         
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-            
-        for i in range(n_ahead):
+class ml_bidirect_forecaster:
+    """
+    Bidirectional ml Forecaster for time-series forecasting.
 
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
-            else:
-                inp_lag = []
-
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
-                        else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-                
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-            else:
-                trend_var = []
-                    
-                    
-            inp = x_var+inp_lag+transform_lag+trend_var
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-
-            pred = self.model_fit.predict(df_inp)[0]
-            predictions.append(pred)
-            lags.append(pred)
-
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
-
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
-
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts
-
-        forecasts = np.array([max(0, x) for x in forecasts])        
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {i.__name__:[] for i in metrics}
-        self.cv_forecats_df= pd.DataFrame()
-
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            # cv_tr_df = pd.DataFrame({"feat_name":self.model_ada.feature_names_in_, "importance":self.model_ada.feature_importances_}).sort_values(by = "importance", ascending = False)
-            # cv_tr_df["fold"] = i
-            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-    
-class HistGradientBoosting_forecaster:
-    def __init__(self, target_col, add_trend = False, trend_type ="linear", ets_params = None, n_lag = None, lag_transform = None, 
-                 differencing_number = None, seasonal_length = None, cat_variables = None,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = HistGradientBoostingRegressor
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend = add_trend
-        self.trend_type = trend_type
-        if ets_params is not None:
-            self.ets_model = ets_params[0]
-            self.ets_fit = ets_params[1]
-        self.box_cox = box_cox
-        self.lmda = box_cox_lmda
-        self.biasadj = box_cox_biasadj
-        self.tuned_params = None
-        self.actuals = None
-        self.prob_forecasts = None
-
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.cat_variables is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col in dfc.columns):
-            if self.box_cox == True:
-                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-                dfc[self.target_col] = trans_data
-            
-            if (self.trend ==True):
-                self.len = len(dfc)
-                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                    if (self.trend_type == "linear"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-    
-                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                    if (self.trend_type == "ses"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
-
-            if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = dfc[self.target_col].tolist()
-                if self.difference is not None:
-                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
-                if self.season_diff is not None:
-                    self.orig_d = dfc[self.target_col].tolist()
-                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
-
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
-                
-            if self.lag_transform is not None:
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(dfc[self.target_col].shift(n))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(dfc[self.target_col])
-                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                        elif f[0].__name__ == "rolling_quantile":
-                            dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
-                        else:
-                            dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-                            
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-        dfc = dfc.dropna()
-
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_ =self.model(**param)
-        else:
-            model_ =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        
-        model_train = self.data_prep(df)
-        self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-
-        self.model_fit = model_.fit(self.X, self.y)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        lags = self.y.tolist()
-        predictions = []
-
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
-            else:
-                inp_lag = []
-
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
-                        else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-                
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-            else:
-                trend_var = [] 
-                    
-            inp = x_var+inp_lag+transform_lag+trend_var
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-
-            pred = self.model_fit.predict(df_inp)[0]
-            predictions.append(pred)
-            lags.append(pred)
-
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
-
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
-
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts   
-        forecasts = np.array([max(0, x) for x in forecasts])      
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {m.__name__: [] for m in metrics}
-        self.cv_forecats_df= pd.DataFrame()
-
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            # cv_tr_df = pd.DataFrame({"feat_name":self.model_hist.feature_names_in_, "importance":self.model_hist.feature_importances_}).sort_values(by = "importance", ascending = False)
-            # cv_tr_df["fold"] = i
-            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-class LR_forecaster:
-    def __init__(self, target_col, model = LinearRegression, add_trend = False, trend_type ="linear", ets_params = None,
-                 n_lag = None, lag_transform = None, differencing_number = None, seasonal_length = None,
-                 cat_variables = None,
-                 box_cox = False, box_cox_lmda = None, box_cox_biasadj= False):
-        if (n_lag == None) and (lag_transform == None):
+    Args:
+         target_cols (list): Names of the target variables.
+         cat_variables (list, optional): List of categorical variable names.
+         n_lag (dict, optional): Dictionary specifying the number of lags or list of lags for each target variable. Default is None. Example: {'target1': 3, 'target2': [1, 2, 3]}.
+         difference (dict, optional): Dictionary specifying the order of ordinary differencing for each target variable. Default is None. Example: {'target1': 1, 'target2': 2}.
+         seasonal_length (dict, optional): Seasonal differencing period. Example: {'target1': 7, 'target2': 7}.
+         trend (dict, optional): Flag indicating if trend handling is applied. Default is False. Example: {'Target1': True, 'Target2': False}.
+         trend_type (dict, optional): Trend handling strategy; one of 'linear', 'feature_lr', 'ses', or 'feature_ses'. Example: {'Target1': 'linear', 'Target2': 'feature_lr'}.
+         ets_params (dict, optional): Dictionary of ETS model parameters (values are tuples of dictionaries of params) and fit settings for each target variable. Example: {'Target1': ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}), 'Target2': ({'trend': 'mul', 'seasonal': 'mul'}, {'damped_trend': False})}.
+         target_encode (dict, optional): Flag determining if target encoding is used for categorical features for each target variable. Default is False. Example: {'Target1': True, 'Target2': False}.
+         box_cox (dict, optional): Whether to apply a Box–Cox transformation for each target variable. Default is False. Example: {'Target1': True, 'Target2': False}.
+         box_cox_lmda (dict, optional): Lambda parameter for the Box–Cox transformation for each target variable. Example: {'Target1': 0.5, 'Target2': 0.5}.
+         box_cox_biasadj (dict, optional): Whether to adjust bias when inverting the Box–Cox transform for each target variable. Default is False. Example: {'Target1': True, 'Target2': False}.
+         lag_transform (dict, optional): Dictionary specifying additional lag transformation functions for each target variable. Example: {'Target1': [func1, func2], 'Target2': [func3]}.
+    """
+    def __init__(self, model, target_cols, cat_variables=None, n_lag=None, difference=None, seasonal_length=None,
+                 trend=False, trend_type="linear", ets_params=None, target_encode=False,
+                 box_cox=False, box_cox_lmda=None, box_cox_biasadj=False, lag_transform=None):
+        if n_lag is None and lag_transform is None:
             raise ValueError('Expected either n_lag or lag_transform args')
         self.model = model
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference = differencing_number
-        self.season_diff = seasonal_length
-        self.lag_transform = lag_transform
+        self.target_cols = target_cols
         self.cat_variables = cat_variables
-        self.trend = add_trend
+        self.n_lag = n_lag
+        self.difference = difference
+        self.season_diff = seasonal_length
+        self.trend = trend
         self.trend_type = trend_type
         if ets_params is not None:
-            self.ets_model = ets_params[0]
-            self.ets_fit = ets_params[1]
+            self.ets_model1 = ets_params[target_cols[0]][0]
+            self.ets_fit1 = ets_params[target_cols[0]][1]
+            self.ets_model2 = ets_params[target_cols[1]][0]
+            self.ets_fit2 = ets_params[target_cols[1]][1]
+        self.target_encode = target_encode
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
         self.biasadj = box_cox_biasadj
+        self.lag_transform = lag_transform
         self.tuned_params = None
         self.actuals = None
         self.prob_forecasts = None
 
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.cat_variables is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
+        if self.model.__name__ in ["CatBoostRegressor", "LGBMRegressor"]:
 
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col in dfc.columns):
-            if self.box_cox == True:
-                self.is_zero = np.any(np.array(dfc[self.target_col]) < 1)
-                trans_data, self.lmda = box_cox_transform(x = dfc[self.target_col], shift = self.is_zero, box_cox_lmda=self.lmda)
-                dfc[self.target_col] = trans_data
-            
-            if (self.trend ==True):
-                self.len = len(dfc)
-                if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                    self.lr_model = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col])
-                    if (self.trend_type == "linear"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-    
-                if (self.trend_type == "ses")|(self.trend_type == "feature_ses"):
-                    self.ses_model = ExponentialSmoothing(dfc[self.target_col], **self.ets_model).fit(**self.ets_fit)
-                    if (self.trend_type == "ses"):
-                        dfc[self.target_col] = dfc[self.target_col]-self.ses_model.fittedvalues.values
+            def data_prep(self, df):
+                """
+                Prepare the data and handle categorical encoding, lag generation, trend removal, and differencing.
+                """
+                dfc = df.copy()
 
-            if (self.difference is not None)|(self.season_diff is not None):
-                self.orig = dfc[self.target_col].tolist()
+                # Box-Cox transformation if flag is set
+                if self.box_cox is not None:
+                    if self.box_cox[self.target_cols[0]]:
+                        self.is_zero1 = np.any(np.array(dfc[self.target_cols[0]]) < 1)
+                        trans_data1, self.lamda1 = box_cox_transform(x=dfc[self.target_cols[0]],
+                                                                    shift=self.is_zero1,
+                                                                    box_cox_lmda=self.lamda[self.target_cols[0]])
+                        dfc[self.target_cols[0]] = trans_data1
+                    if self.box_cox[self.target_cols[1]]:
+                        self.is_zero2 = np.any(np.array(dfc[self.target_cols[1]]) < 1)
+                        trans_data2, self.lamda2 = box_cox_transform(x=dfc[self.target_cols[1]],
+                                                                    shift=self.is_zero2,
+                                                                    box_cox_lmda=self.lamda[self.target_cols[1]])
+                        dfc[self.target_cols[1]] = trans_data2
+
+                # Handle trend removal if specified
+                if self.trend is not None:
+                    self.len = len(dfc)
+                    if self.trend[0]:
+                        self.lr_model1 = LinearRegression().fit(np.arange(self.len).reshape(-1, 1), dfc[self.target_cols[0]])
+
+                        if self.trend_type[0] in ["linear", "feature_lr"]:
+                            dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.lr_model1.predict(np.arange(self.len).reshape(-1, 1))
+                        if self.trend_type[0] in ["ses", "feature_ses"]:
+                            self.ses_model1 = ExponentialSmoothing(dfc[self.target_cols[0]], **self.ets_model1).fit(**self.ets_fit1)
+                            dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.ses_model1.fittedvalues.values
+
+                    if self.trend[1]:
+                        self.lr_model2 = LinearRegression().fit(np.arange(self.len).reshape(-1, 1), dfc[self.target_cols[1]])
+
+                        if self.trend_type[1] in ["linear", "feature_lr"]:
+                            dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.lr_model2.predict(np.arange(self.len).reshape(-1, 1))
+
+                        if self.trend_type[1] in ["ses", "feature_ses"]:
+                            self.ses_model2 = ExponentialSmoothing(dfc[self.target_cols[1]], **self.ets_model2).fit(**self.ets_fit2)
+                            dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.ses_model2.fittedvalues.values
+                # Handle differencing if specified
                 if self.difference is not None:
-                    dfc[self.target_col] = np.diff(dfc[self.target_col], n= self.difference, prepend=np.repeat(np.nan, self.difference))
+                    if isinstance(self.difference, dict):
+                        if self.difference[self.target_cols[0]] is not None:
+                            self.orig1 = dfc[self.target_cols[0]].tolist()
+                            dfc[self.target_cols[0]] = np.diff(dfc[self.target_cols[0]], n=self.difference[self.target_cols[0]],
+                                                            prepend=np.repeat(np.nan, self.difference[self.target_cols[0]]))
+                        if self.difference[self.target_cols[1]] is not None:
+                            self.orig2 = dfc[self.target_cols[1]].tolist()
+                            dfc[self.target_cols[1]] = np.diff(dfc[self.target_cols[1]], n=self.difference[self.target_cols[1]],
+                                                            prepend=np.repeat(np.nan, self.difference[self.target_cols[1]]))
                 if self.season_diff is not None:
-                    self.orig_d = dfc[self.target_col].tolist()
-                    dfc[self.target_col] = seasonal_diff(dfc[self.target_col], self.season_diff)
+                    if isinstance(self.season_diff, dict):
+                        if self.season_diff[self.target_cols[0]] is not None:
+                            self.orig_d1 = dfc[self.target_cols[0]].tolist()
+                            dfc[self.target_cols[0]] = seasonal_diff(dfc[self.target_cols[0]], self.season_diff[self.target_cols[0]])
+                        if self.season_diff[self.target_cols[1]] is not None:
+                            self.orig_d2 = dfc[self.target_cols[1]].tolist()
+                            dfc[self.target_cols[1]] = seasonal_diff(dfc[self.target_cols[1]], self.season_diff[self.target_cols[1]])
 
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc["lag"+"_"+str(i)] = dfc[self.target_col].shift(i)
-                
-            if self.lag_transform is not None:
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(dfc[self.target_col].shift(n))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(dfc[self.target_col])
-                                dfc[f.__name__+"_"+str(n)] = f(arr2, n)
-                        elif f[0].__name__ == "rolling_quantile":
-                            dfc["q_"+str(f[2])+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1], f[2])
-                        else:
-                            dfc[f[0].__name__+"_"+str(n)+"_"+str(f[1])] = f[0](df_array, f[1]) 
-
-                            
-        if self.trend ==True:
-            if (self.target_col in dfc.columns):
-                if self.trend_type == "feature_lr":
-                    dfc["trend"] = self.lr_model.predict(np.array(range(self.len)).reshape(-1, 1))
-
-                if self.trend_type == "feature_ses":
-                    dfc["trend"] = self.ses_model.fittedvalues.values
-        dfc = dfc.dropna()
-
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model =self.model(**param)
-        else:
-            model =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        
-        model_train = self.data_prep(df)
-        self.X, self.y = model_train.drop(columns =self.target_col), model_train[self.target_col]
-
-        self.model_fit = model.fit(self.X, self.y)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        lags = self.y.tolist()
-        predictions = []
-
-        if self.trend ==True:
-            if (self.trend_type == "linear") | (self.trend_type == "feature_lr"):
-                trend_pred = self.lr_model.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-            if (self.trend_type == "ses") | (self.trend_type == "feature_ses"):
-                trend_pred = self.ses_model.forecast(n_ahead).values
-
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag = [lags[-l] for l in self.n_lag] # to get defined lagged variables 
-            else:
-                inp_lag = []
-
-            if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    df_array = np.array(pd.Series(lags).shift(n-1))
-                    for f in k:
-                        if not isinstance(f, tuple):
-                            if (f.__name__ == "nzInterval")|(f.__name__ == "zeroCumulative"):
-                                arr2 = np.array(pd.Series(lags))
-                                t1 = f(arr2, n-1)[-1]
-                        elif f[0].__name__ == "rolling_quantile":
-                            t1 = f[0](df_array, f[1], f[2])[-1]
-                        else:
-                            t1 = f[0](df_array, f[1])[-1]
-                        transform_lag.append(t1)
-            else:
-                transform_lag = []
-                
-            if (self.trend ==True):
-                if (self.trend_type == "feature_lr")|(self.trend_type == "feature_ses"):
-                    trend_var = [trend_pred[i]]
-                else:
-                    trend_var = []
-            else:
-                trend_var = [] 
-                    
-            inp = x_var+inp_lag+transform_lag+trend_var
-
-            pred = self.model_fit.predict(np.array(inp).reshape(1,-1))[0]
-
-            predictions.append(pred)
-            lags.append(pred)
-
-        forecasts = np.array(predictions)
-        if self.season_diff is not None:
-            forecasts = invert_seasonal_diff(self.orig_d, forecasts, self.season_diff)
-
-        if self.difference is not None:
-            forecasts = undiff_ts(self.orig, forecasts, self.difference)
-
-        if (self.trend ==True):
-            if (self.trend_type =="linear")|(self.trend_type =="ses"):
-                forecasts = trend_pred+forecasts 
-        forecasts = np.array([max(0, x) for x in forecasts])      
-        if self.box_cox == True:
-            forecasts = back_box_cox_transform(y_pred = forecasts, lmda = self.lmda, shift= self.is_zero, box_cox_biasadj=self.biasadj)
-        return forecasts
-
-    def cv(self, df, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {m.__name__: [] for m in metrics}
-        self.cv_impotance = pd.DataFrame()
-        self.cv_forecats_df= pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)
-
-            forecat_df = test[self.target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            cv_tr_df = pd.DataFrame({"features":self.model_fit.feature_names_in_, "coefs":self.model_fit.coef_}).sort_values(by = "coefs", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_impotance = pd.concat([self.cv_impotance, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-    
-def cv_tune(model, df, cv_split, test_size, param_space,eval_metric, opt_horizon = None,
-                eval_num = 100, verbose= False):
-
-    tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-    
-    def objective(params):
-        if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
-            if ('n_lag' in params):
-                if type(params["n_lag"]) is tuple:
-                    model.n_lag = list(params["n_lag"])
-                else:
-                    model.n_lag = range(1, params["n_lag"]+1)
-
-            if ('differencing_number' in params):
-                model.difference = params["differencing_number"]
-            if ('box_cox' in params):
-                model.box_cox = params["box_cox"]
-            if ('box_cox_lmda' in params):
-                model.lmda = params["box_cox_lmda"]
-
-            if ('box_cox_biasadj' in params):
-                model.biasadj = params["box_cox_biasadj"]
-
-
-        if (model.trend_type == "ses")|(model.trend_type == "feature_ses"):
-            model.ets_model = {}
-            for ets_param1 in ["trend", "damped_trend", "seasonal", "seasonal_periods"]:
-                if ets_param1 in params:
-                    model.ets_model[ets_param1] = params[ets_param1]
-            model.ets_fit = {}
-            for ets_param2 in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
-                if ets_param2 in params:
-                    if (ets_param2 =="damping_trend") & (params["damped_trend"]==False):
-                        pass
-                    else:
-                        model.ets_fit[ets_param2] = params[ets_param2]
-            # model.ets_model = ets_params[0]
-
-            # self.data_prep(df)
-        if model.model.__name__ != 'LinearRegression':
-            model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj", "trend", "damped_trend", "seasonal", "seasonal_periods", "smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"])}
-
-        metric = []
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.iloc[:, 1:], np.array(test[model.target_col])
-
-            if model.model.__name__ != 'LinearRegression':
-                model.fit(train, model_params)
-            else:
-                model.fit(train)
-            yhat = model.forecast(n_ahead =len(y_test), x_test=x_test)
-            if eval_metric.__name__== 'mean_squared_error':
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], squared=False)
-                else:
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-
-            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-            else:
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:])
-                else:
-                    accuracy = eval_metric(y_test, yhat)
-            metric.append(accuracy)
-        score = np.mean(metric)
-
-        if verbose ==True:
-            print ("SCORE:", score)
-        return {'loss':score, 'status':STATUS_OK}
-        
-    trials = Trials()
-
-    best_hyperparams = fmin(fn = objective,
-                    space = param_space,
-                    algo = tpe.suggest,
-                    max_evals = eval_num,
-                    trials = trials)
-    model.tuned_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
-                for t in trials.trials]
-    
-    return space_eval(param_space, best_hyperparams)
-
-def backtest_tune(model, df, n_windows, H, param_space,eval_metric, opt_horizon = None,
-                eval_num = 100, verbose= False):
-    
-    def objective(params):
-        if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
-            if ('n_lag' in params):
-                if type(params["n_lag"]) is tuple:
-                    model.n_lag = list(params["n_lag"])
-                else:
-                    model.n_lag = range(1, params["n_lag"]+1)
-
-            if ('differencing_number' in params):
-                model.difference = params["differencing_number"]
-            if ('box_cox' in params):
-                model.box_cox = params["box_cox"]
-            if ('box_cox_lmda' in params):
-                model.lmda = params["box_cox_lmda"]
-
-            if ('box_cox_biasadj' in params):
-                model.biasadj = params["box_cox_biasadj"]
-
-            # self.data_prep(df)
-        if model.model.__name__ != 'LinearRegression':
-            model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
-
-        metric = []
-        fix_idx = n_windows+H
-        for i in range(1, n_windows+1):
-            train = df[:-(fix_idx-i)]
-            if i ==n_windows:
-                test = df[-H:]
-            else:
-                test= df[-(fix_idx-i):-(n_windows-i)]
-                
-            x_test, y_test = test.iloc[:, 1:], np.array(test[model.target_col])
-
-            if model.model.__name__ != 'LinearRegression':
-                model.fit(train, model_params)
-            else:
-                model.fit(train)
-
-            yhat = model.forecast(n_ahead =len(y_test), x_test=x_test)
-            if eval_metric.__name__== 'mean_squared_error':
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], squared=False)
-                else:
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-
-            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-            else:
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:])
-                else:
-                    accuracy = eval_metric(y_test, yhat)
-            metric.append(accuracy)
-        score = np.mean(metric)
-
-        if verbose ==True:
-            print ("SCORE:", score)
-        return {'loss':score, 'status':STATUS_OK}
-        
-    trials = Trials()
-
-    best_hyperparams = fmin(fn = objective,
-                    space = param_space,
-                    algo = tpe.suggest,
-                    max_evals = eval_num,
-                    trials = trials)
-    model.tuned_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
-                for t in trials.trials]
-    
-    return space_eval(param_space, best_hyperparams)
-
-def backtest_model(model, df, n_windows, H, metrics, model_params=None):
-    
-    metrics_dict = {m.__name__: [] for m in metrics}
-    prob_forecasts = []
-    actuals = []
-    fix_idx = n_windows+H
-    for i in range(1, n_windows+1):
-        train = df[:-(fix_idx-i)]
-        if i ==n_windows:
-            test = df[-H:]
-        else:
-            test= df[-(fix_idx-i):-(n_windows-i)]
-            
-        x_test, y_test = test.iloc[:, 1:], np.array(test[model.target_col])
-
-        if model_params is not None:
-            model.fit(train, model_params)
-        else:
-            model.fit(train)
-        yhat = model.forecast(n_ahead =len(y_test), x_test=x_test)
-        actuals.append(y_test)
-        prob_forecasts.append(yhat)
-        for m in metrics:
-            if m.__name__== 'mean_squared_error':
-                eval = m(y_test, yhat, squared=False)
-            elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                eval = m(y_test, yhat, np.array(train[model.target_col]))
-            else:
-                eval = m(y_test, yhat)
-            metrics_dict[m.__name__].append(eval)
-            
-    overal_perform = [[m.__name__, np.mean(metrics_dict[m.__name__])] for m in metrics]
-    
-    prob_forecasts = np.row_stack(prob_forecasts)
-    prob_forecasts=pd.DataFrame(prob_forecasts)
-    prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
-    model.prob_forecasts = prob_forecasts
-    
-    actuals = np.row_stack(actuals)
-    actuals=pd.DataFrame(actuals)
-    actuals.columns = ["horizon_"+str(i+1) for i in actuals.columns]
-    model.actuals = actuals
-    
-    return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-def prob_param_forecasts(model, H, train_df, test_df=None):
-    prob_forecasts = []
-    for params in model.tuned_params:
-        if ('n_lag' in params) |('differencing_number' in params)|('box_cox' in params)|('box_cox_lmda' in params)|('box_cox_biasadj' in params):
-            if ('n_lag' in params):
-                if type(params["n_lag"]) is tuple:
-                    model.n_lag = list(params["n_lag"])
-                else:
-                    model.n_lag = range(1, params["n_lag"]+1)
-
-            if ('differencing_number' in params):
-                model.difference = params["differencing_number"]
-            if ('box_cox' in params):
-                model.box_cox = params["box_cox"]
-            if ('box_cox_lmda' in params):
-                model.lmda = params["box_cox_lmda"]
-
-            if ('box_cox_biasadj' in params):
-                model.biasadj = params["box_cox_biasadj"]
-
-        
-        if model.model.__name__ != 'LinearRegression':
-            model_params = {k: v for k, v in params.items() if (k not in ["box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj"])}
-            model.fit(train_df, model_params)
-        else:
-            model.fit(train_df)
-        if test_df is not None:
-            forecasts = model.forecast(H, test_df)
-        else:
-            forecasts = model.forecast(H)
-
-        prob_forecasts.append(forecasts)
-    prob_forecasts = np.row_stack(prob_forecasts)
-    prob_forecasts=pd.DataFrame(prob_forecasts)
-    prob_forecasts.columns = ["horizon_"+str(i+1) for i in prob_forecasts.columns]
-    return prob_forecasts
-
-class lightGBM_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, cat_variables = None,
-                 trend1 = False, trend2 = False, trend_type = "component"):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = LGBMRegressor
-        self.target_col = target_col
-        self.cat_var = cat_variables
-        self.n_lag = n_lag
-        self.difference1 = difference_1
-        self.difference2 = difference_2
-        self.lag_transform = lag_transform
-        self.trend1 = trend1
-        self.trend2 = trend2
-        self.trend_type = trend_type
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-
-        if (self.trend1 ==True):
-            self.len = len(dfc)
-            self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
-            
-            if (self.trend_type == "component"):
-                dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
-
-        if (self.trend2 ==True):
-            self.len = len(dfc)
-            self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
-            
-            if (self.trend_type == "component"):
-                dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
-
-        if self.difference1 is not None:
-            self.last_tar1 = df[self.target_col[0]].tolist()[-1]
-            for i in range(1, self.difference1+1):
-                dfc[self.target_col[0]] = dfc[self.target_col[0]].diff(1)
-                
-        if self.difference2 is not None:
-            self.last_tar2 = df[self.target_col[1]].tolist()[-1]
-            for i in range(1, self.difference2+1):
-                dfc[self.target_col[1]] = dfc[self.target_col[1]].diff(1)
-        
-        if self.cat_var is not None:
-            for c in self.cat_var:
-                dfc[c] = dfc[c].astype('category')
-                
-        if self.n_lag is not None:
-            for i in self.n_lag:
-                dfc[self.target_col[0]+"_lag"+"_"+str(i)] = dfc[self.target_col[0]].shift(i)
-                
-            for i in self.n_lag:
-                dfc[self.target_col[1]+"_lag"+"_"+str(i)] = dfc[self.target_col[1]].shift(i)
-            
-        if self.lag_transform is not None:
-            df_array = np.array(dfc[self.target_col])
-            for i, j in self.lag_transform.items():
-                dfc[i.__name__+"_"+str(j)] = i(df_array, j)
-            
-        dfc = dfc.dropna()
-        return dfc
-    
-    def fit(self, df, param = None):
-
-        if param is not None:
-            model_lgb1 = self.model(**param, verbose=-1)
-            model_lgb2 = self.model(**param, verbose=-1)
-        else:
-            model_lgb1 = self.model(verbose=-1)
-            model_lgb2 = self.model(verbose=-1)
-
-        model_df = self.data_prep(df)
-        
-        self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
-        self.model_lgb1 = model_lgb1.fit(self.X, self.y1, categorical_feature=self.cat_var)
-        self.model_lgb2 = model_lgb2.fit(self.X, self.y2, categorical_feature=self.cat_var)
-    
-    def forecast(self, n_ahead, x_test = None):
-        tar1_lags = self.y1.tolist()
-        tar2_lags = self.y2.tolist()
-        tar1_predictions = []
-        tar2_predictions = []
-
-        if self.trend1 ==True:
-            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-
-        if self.trend2 ==True:
-            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-        
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_test.iloc[i, 0:].tolist()       
-            else:
-                x_var = []
-            if self.n_lag is not None:
-                inp_lag1 = [tar1_lags[-i] for i in self.n_lag]
-                inp_lag2 = [tar2_lags[-i] for i in self.n_lag]
-            else:
-                inp_lag1 = []
-                inp_lag2 = []
-                
-            if self.lag_transform is not None:
-                lag_array = np.array(tar1_lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
-            else:
-                transform_lag = []
-
-            inp = x_var + inp_lag1+inp_lag2+transform_lag
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-            
-            for i in df_inp.columns:
+                # Process categorical variables if provided
                 if self.cat_var is not None:
-                    if i in self.cat_var:
-                        df_inp[i] = df_inp[i].astype('category')
+                    for col in self.cat_var:
+                        dfc[col] = dfc[col].astype('category')
+
+                # Create lag features based on n_lag parameter
+                if self.n_lag is not None:
+                    if isinstance(self.n_lag, dict):
+                        for target in self.target_cols:
+                            if isinstance(self.n_lag[target], int):
+                                lags = range(1, self.n_lag[target] + 1)
+                            else:
+                                lags = self.n_lag[target]
+                            for lag in lags:
+                                dfc[f"{target}_lag_{lag}"] = dfc[target].shift(lag)
                     else:
-                        df_inp[i] = df_inp[i].astype('float64')
-                else:
-                    df_inp[i] = df_inp[i].astype('float64')
-
-            pred1 = self.model_lgb1.predict(df_inp)[0]
-            tar1_predictions.append(pred1)
-            tar1_lags.append(pred1)
-            
-            pred2 = self.model_lgb2.predict(df_inp)[0]
-            tar2_predictions.append(pred2)
-            tar2_lags.append(pred2)
-            
-        if self.difference1 is not None:
-            tar1_predictions.insert(0, self.last_tar1)
-            forecast1 = np.cumsum(tar1_predictions)[-n_ahead:]
-        else:
-            forecast1 = np.array(tar1_predictions)
-            
-        if self.difference2 is not None:
-            tar2_predictions.insert(0, self.last_tar2)
-            forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
-        else:
-            forecast2 = np.array(tar2_predictions)
-
-        if (self.trend1 ==True)&(self.trend_type =="component"):
-            forecast1 = trend_pred1+forecast1
-
-        if (self.trend2 ==True)&(self.trend_type =="component"):
-            forecast2 = trend_pred2+forecast2
-
-        forecast1 = np.array([max(0, x) for x in forecast1])  
-        forecast2 = np.array([max(0, x) for x in forecast2])  
-            
-        return forecast1, forecast2
-    
-    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {m.__name__: [] for m in metrics}
-        self.cv_df = pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            if forecast_idx == 0:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb1.feature_name_, "importance":self.model_lgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
-            else:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb2.feature_name_, "importance":self.model_lgb2.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-    
-    def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        def objective(params):
-            model1=self.model(**params, verbose=-1)
-            model2 =self.model(**params, verbose=-1)
-
-            metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-                model_train = self.data_prep(train)
+                        raise ValueError("n_lag should be a dictionary with target column names as keys.")
                 
-                self.X, self.y1, self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-                self.model_lgb1 = model1.fit(self.X, self.y1, categorical_feature=self.cat_var)
-                self.model_lgb2 = model2.fit(self.X, self.y2, categorical_feature=self.cat_var)
-                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
+                # Create additional lag transformations if specified (check this later)
+                if self.lag_transform is not None:
+                    for target, funcs in self.lag_transform.items():
+                        if target not in self.target_cols:
+                            raise ValueError(f"Target column {target} not found in the dataframe.")
+                        for func in funcs:
+                            df_array = np.array(dfc[target].shift(funcs[0])) # func[0] is the shift value
+                            if isinstance(func, tuple):
+                                if func[1].__name__ == "rolling_quantile":
+                                    dfc[f"q_{func[3]}_{func[2]}_{func[0]}"] = func[1](df_array, func[2], func[3]) # The first element of tuple is shift value, the second element of the tuple is a function, the third is the window, the fourth is the quantile. EX: (1, rolling_quantile, 30, 0.5) will create a feature with rolling quantile of the target variable shifted by 1.
+                                # write a condition for zero and 1 values (Croston, 2023) here later
+                                # elif func[1].__name__ == "zeroCumulative" or func[1].__name__ == "nzInterval":
+                                #     dfc[f"{func[1].__name__}_{func[2]}"] = func[1](df_array, func[2])
+                                else:
+                                    dfc[f"{func[1].__name__}_{func[2]}_{func[0]}"] = func[1](df_array, func[2]) # The first elemet of the tuple is shift value, the second element of the tuple is a function, the second is the window. EX: (1, rolling_mean, 30) will create a feature with rolling mean of the target variable shifted by 1.
                 
-                if eval_metric.__name__== 'mean_squared_error':
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0], squared=False)
-                    else:
-                        accuracy = eval_metric(y_test, yhat[1], squared=False)
-                    
-                else:
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0])
                         
-                    else:
-                        accuracy = eval_metric(y_test, yhat[1])
-#                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+                # Add trend features if specified
+                if self.trend is not None:
+                    # if self.target_cols[0] in dfc.columns:
+                    if self.trend_type[0] == "feature_lr":
+                        dfc["trend1"] = self.lr_model1.predict(np.arange(self.len).reshape(-1, 1))
+                    if self.trend_type[0] == "feature_ses":
+                        dfc["trend1"] = self.ses_model1.fittedvalues.values
+                    # if self.target_cols[1] in dfc.columns:
+                    if self.trend_type[1] == "feature_lr":
+                        dfc["trend2"] = self.lr_model2.predict(np.arange(self.len).reshape(-1, 1))
+                    if self.trend_type[1] == "feature_ses":
+                        dfc["trend2"] = self.ses_model2.fittedvalues.values
 
-            print ("SCORE:", score)
-            return {'loss':score, 'status':STATUS_OK}
+                return dfc.dropna()
             
-        trials = Trials()
-
-        best_hyperparams = fmin(fn = objective,
-                        space = param_space,
-                        algo = tpe.suggest,
-                        max_evals = eval_num,
-                        trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
-        return space_eval(param_space, best_hyperparams)
-    
-class xgboost_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_variables = None, trend1  = False, trend2= False, trend_type ="component"):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = XGBRegressor
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference1 = difference_1
-        self.difference2 = difference_2
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend1 = trend1
-        self.trend2 = trend2
-        self.trend_type = trend_type
-    
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.cat_var is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-        if self.drop_categ is not None:
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
-
-            if (self.trend1 ==True):
-                self.len = len(dfc)
-                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
-
-            if (self.trend2 ==True):
-                self.len = len(dfc)
-                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
-                    
-            if self.difference1 is not None:
-                self.last_tar1 = df[self.target_col[0]].tolist()[-1]
-                for i in range(1, self.difference1+1):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]].diff(1)
-                    
-            if self.difference2 is not None:
-                self.last_tar2 = df[self.target_col[1]].tolist()[-1]
-                for i in range(1, self.difference2+1):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]].diff(1)
-                    
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc[self.target_col[0]+"_lag"+"_"+str(i)] = dfc[self.target_col[0]].shift(i)
-                    
-                for i in self.n_lag:
-                    dfc[self.target_col[1]+"_lag"+"_"+str(i)] = dfc[self.target_col[1]].shift(i)
-
-                
-            if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
-        dfc = dfc.dropna()
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_xgb1 =self.model(**param)
-            model_xgb2 =self.model(**param)
-        else:
-            model_xgb1 =self.model()
-            model_xgb2 =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
-        self.model_xgb1 = model_xgb1.fit(self.X, self.y1, verbose = True)
-        self.model_xgb2 = model_xgb2.fit(self.X, self.y2, verbose = True)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        tar1_lags = self.y1.tolist()
-        tar2_lags = self.y2.tolist()
-        tar1_predictions = []
-        tar2_predictions = []
-
-        if self.trend1 ==True:
-            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-
-        if self.trend2 ==True:
-            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-        
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag1 = [tar1_lags[-i] for i in self.n_lag]
-                inp_lag2 = [tar2_lags[-i] for i in self.n_lag]
-            else:
-                inp_lag1 = []
-                inp_lag2 = []
-            if self.lag_transform is not None:
-                lag_array = np.array(tar1_lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
-            else:
-                transform_lag = []
-                    
-                    
-            inp = x_var + inp_lag1+inp_lag2+transform_lag
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-
-            pred1 = self.model_xgb1.predict(df_inp)[0]
-            tar1_predictions.append(pred1)
-            tar1_lags.append(pred1)
-
-            pred2 = self.model_xgb2.predict(df_inp)[0]
-            tar2_predictions.append(pred2)
-            tar2_lags.append(pred2)
-
-        if self.difference1 is not None:
-            tar1_predictions.insert(0, self.last_tar1)
-            forecast1 = np.cumsum(tar1_predictions)[-n_ahead:]
-        else:
-            forecast1 = np.array(tar1_predictions)
-            
-        if self.difference2 is not None:
-            tar2_predictions.insert(0, self.last_tar2)
-            forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
-        else:
-            forecast2 = np.array(tar2_predictions)
-
-        if (self.trend1 ==True)&(self.trend_type =="component"):
-            forecast1 = trend_pred1+forecast1
-
-        if (self.trend2 ==True)&(self.trend_type =="component"):
-            forecast2 = trend_pred2+forecast2
-
-        forecast1 = np.array([max(0, x) for x in forecast1])  
-        forecast2 = np.array([max(0, x) for x in forecast2])  
-
-        return forecast1, forecast2
-    
-    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {i.__name__:[] for i in metrics}
-        self.cv_df = pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+            def fit(self, df, param=None):
+                # Fit the model to the dataframe
+                if param is not None:
+                    model1_ = self.model(**param)
+                    model2_ = self.model(**param)
                 else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
+                    model1_ = self.model()
+                    model2_ = self.model()
+                model_train = self.data_prep(df)
+                self.X = model_train.drop(columns=self.target_cols)
+                self.y1 = model_train[self.target_cols[0]]
+                self.y2 = model_train[self.target_cols[1]]
+                self.model1_fit = model1_.fit(self.X, self.y1, cat_features=self.cat_variables)
+                self.model2_fit = model2_.fit(self.X, self.y2, cat_features=self.cat_variables)
+            
+            def forecast(self, n_ahead, x_test=None):
+                """
+                Forecast future values for n_ahead periods.
 
-            if forecast_idx == 0:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_xgb1.feature_names_in_, "importance":self.model_xgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
-            else:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_xgb2.feature_names_in_, "importance":self.model_xgb2.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+                Args:
+                    n_ahead (int): Number of periods to forecast.
+                    x_test (pd.DataFrame, optional): Exogenous variables.
 
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
+                Returns:
+                    np.array: Forecasted values.
+                """
+                target1_lags = self.y1.tolist()
+                target2_lags = self.y2.tolist()
+                tar1_forecasts = []
+                tar2_forecasts = []
 
-    
-    def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
+                if self.trend is not None:
+                    if self.trend_type[0] in ["linear", "feature_lr"]:
+                        trend_pred1 = self.lr_model1.predict(np.arange(self.len, self.len + n_ahead).reshape(-1, 1))
+                    elif self.trend_type[0] in ["ses", "feature_ses"]:
+                        trend_pred1 = self.ses_model1.forecast(n_ahead).values
 
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        def objective(params):
-            model1=self.model(**params)
-            model2 =self.model(**params)
+                    if self.trend_type[1] in ["linear", "feature_lr"]:
+                        trend_pred2 = self.lr_model2.predict(np.arange(self.len, self.len + n_ahead).reshape(-1, 1))
+                    elif self.trend_type[1] in ["ses", "feature_ses"]:
+                        trend_pred2 = self.ses_model2.forecast(n_ahead).values
 
-            metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-                model_train = self.data_prep(train)
-                
-                self.X, self.y1, self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-                self.model_xgb1 = model1.fit(self.X, self.y1, verbose = True)
-                self.model_xgb2 = model2.fit(self.X, self.y2, verbose = True)
-                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                
-                if eval_metric.__name__== 'mean_squared_error':
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0], squared=False)
+                # Forecast recursively one step at a time
+                for i in range(n_ahead):
+                    if x_test is not None:
+                        x_var = x_test.iloc[i, :].tolist()
                     else:
-                        accuracy = eval_metric(y_test, yhat[1], squared=False)
-                    
-                else:
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0])
+                        x_var = []
+
+                    if self.n_lag is not None:
+                        # For the first target variable
+                        if isinstance(self.n_lag[self.target_cols[0]], int):
+                            lags1 = range(1, self.n_lag[self.target_cols[0]] + 1)
+                        else:
+                            lags1 = self.n_lag[self.target_cols[0]]
+                        inp_lag1 = [target1_lags[-lag] for lag in lags1]
+
+                        # For the second target variable
+                        if isinstance(self.n_lag[self.target_cols[1]], int):
+                            lags2 = range(1, self.n_lag[self.target_cols[1]] + 1)
+                        else:
+                            lags2 = self.n_lag[self.target_cols[1]]
+                        inp_lag2 = [target2_lags[-lag] for lag in lags2]
+                    else:
+                        inp_lag1 = []
+                        inp_lag2 = []
+
+                    if self.lag_transform is not None:
+                        transform_lag = []
+                        for target, funcs in self.lag_transform.items():
+                            if target not in self.target_cols:
+                                raise ValueError(f"Target column {target} not found in the dataframe.")
+                            for func in funcs:
+                                series_array = np.array(pd.Series(target1_lags if target == self.target_cols[0] else target2_lags).shift(funcs[0]))
+                                if not isinstance(func, tuple):
+                                    if func[1].__name__ == "rolling_quantile":
+                                        t1 = func[1](series_array, funcs[2], funcs[3])[-1]
+                                    else:
+                                        t1 = func[1](series_array, funcs[2])[-1]
+                                transform_lag.append(t1)
+                    else:
+                        transform_lag = []
+
+                    inp = x_var + inp_lag1 + inp_lag2 + transform_lag
+                    df_inp = pd.DataFrame(inp).T
+                    df_inp.columns = self.X.columns
+                    pred1 = self.model1_fit.predict(df_inp)[0]
+                    tar1_forecasts.append(pred1)
+                    target1_lags.append(pred1)
+                    pred2 = self.model2_fit.predict(df_inp)[0]
+                    tar2_forecasts.append(pred2)
+                    target2_lags.append(pred2)
+                forecasts1 = np.array(tar1_forecasts)
+                forecasts2 = np.array(tar2_forecasts)
+                # Revert seasonal differencing if applied
+                if self.season_diff is not None:
+                    forecasts1 = invert_seasonal_diff(self.orig_d1, forecasts1, self.season_diff[self.target_cols[0]])
+                    forecasts2 = invert_seasonal_diff(self.orig_d2, forecasts2, self.season_diff[self.target_cols[1]])
+                if self.difference is not None:
+                    forecasts1 = undiff_ts(self.orig1, forecasts1, self.difference[self.target_cols[0]])
+                    forecasts2 = undiff_ts(self.orig2, forecasts2, self.difference[self.target_cols[1]])
+                if self.trend is not None:
+                    if self.trend_type[0] in ["linear", "ses"]:
+                        forecasts1 = trend_pred1 + forecasts1
+                    if self.trend_type[1] in ["linear", "ses"]:
+                        forecasts2 = trend_pred2 + forecasts2
+                forecasts1 = np.array([max(0, x) for x in forecasts1])
+                forecasts2 = np.array([max(0, x) for x in forecasts2])
+                if self.box_cox is not None:
+                    if self.box_cox[self.target_cols[0]]:
+                        forecasts1 = back_box_cox_transform(y_pred=forecasts1,
+                                                            lmda=self.lamda1,
+                                                            shift=self.is_zero1,
+                                                            box_cox_biasadj=self.biasadj[self.target_cols[0]])
+                    if self.box_cox[self.target_cols[1]]:
+                        forecasts2 = back_box_cox_transform(y_pred=forecasts2,
+                                                            lmda=self.lamda2,
+                                                            shift=self.is_zero2,
+                                                            box_cox_biasadj=self.biasadj[self.target_cols[1]])
+                return forecasts1, forecasts2
+            
+            def cv(self, df, cv_split, test_size, metrics, params=None):
+                """"
+                cross-validate the bidirectional CatBoost model with time series split.
+                Args:
+                    df (pd.DataFrame): Input dataframe.
+                    cv_split (int): Number of folds.
+                    test_size (int): Forecast window for each split.
+                    metrics (list): List of evaluation metric functions.
+                    params (dict, optional): Hyperparameters for model training.
+                Returns:
+                    pd.DataFrame: CV performance metrics for each target variable.
+                """
+                tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+                self.metrics_dict = {m.__name__: [] for m in metrics}
+                self.cv_fi = pd.DataFrame()
+                self.cv_forecasts_df = pd.DataFrame()
+                for i, (train_index, test_index) in enumerate(tscv.split(df)):
+                    train, test = df.iloc[train_index], df.iloc[test_index]
+                    x_test = test.drop(columns=self.target_cols)
+                    y_test1 = np.array(test[self.target_cols[0]])
+                    y_test2 = np.array(test[self.target_cols[1]])
+                    if params is not None:
+                        self.fit(train, param=params)
+                    else:
+                        self.fit(train)
+                    forecast_vals1, forecast_vals2 = self.forecast(test_size, x_test=x_test)
+                    forecat_df = test[self.target_cols]
+                    forecat_df["forecasts1"] = forecast_vals1
+                    forecat_df["forecasts2"] = forecast_vals2
+                    self.cv_forecasts_df = pd.concat([self.cv_forecasts_df, forecat_df], axis=0)
+                    for m in metrics:
+                        if m.__name__ == 'mean_squared_error':
+                            val1 = m(y_test1, forecast_vals1, squared=False)
+                            val2 = m(y_test2, forecast_vals2, squared=False)
+                        elif m.__name__ in ['MeanAbsoluteScaledError', 'MedianAbsoluteScaledError']:
+                            val1 = m(y_test1, forecast_vals1, np.array(train[self.target_cols[0]]))
+                            val2 = m(y_test2, forecast_vals2, np.array(train[self.target_cols[1]]))
+                        else:
+                            val1 = m(y_test1, forecast_vals1)
+                            val2 = m(y_test2, forecast_vals2)
+                        self.metrics_dict[m.__name__].append([val1, val2])
+                    cv_tr_df1 = pd.DataFrame({"feat_name": self.model1_fit.feature_names_in_,
+                                            "importance": self.model1_fit.feature_importances_}).sort_values(by="importance", ascending=False)
+                    cv_tr_df1["target"] = self.target_cols[0]
+                    cv_tr_df1["fold"] = i
+                    cv_tr_df2 = pd.DataFrame({"feat_name": self.model2_fit.feature_names_in_,
+                                            "importance": self.model2_fit.feature_importances_}).sort_values(by="importance", ascending=False)
+                    cv_tr_df2["target"] = self.target_cols[1]
+                    cv_tr_df2["fold"] = i
+                    self.cv_fi = pd.concat([self.cv_fi, cv_tr_df1, cv_tr_df2], axis=0)
+                overall = [[m.__name__, np.mean([v[0] for v in self.metrics_dict[m.__name__]])] for m in metrics]
+                # pd.DataFrame(overall).rename(columns={0: "eval_metric", 1: "score1", 2: "score2"})
+                return pd.DataFrame(overall).rename(columns={0: "eval_metric", 1: f"score_{self.target_cols[0]}", 2: f"score_{self.target_cols[1]}"})
+        else:
+            # For models like XGBRegressor, LGBMRegressor, etc.
+            def data_prep(self, df):
+                # Prepare the data for modeling
+                dfc = df.copy()
+                if self.cat_variables is not None:
+                    for col, cat in self.cat_var.items():
+                        dfc[col] = dfc[col].astype('category')
+                        # Set categories for categorical columns
+                        dfc[col] = dfc[col].cat.set_categories(cat)
+                    dfc = pd.get_dummies(dfc)
+
+                    for i in self.drop_categ:
+                        dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
+
+                if (self.target_cols[0] in dfc.columns) or (self.target_cols[1] in dfc.columns):
+                    # Apply Box–Cox transformation if specified
+                    if self.box_cox[self.target_cols[0]]:
+                        self.is_zero1 = np.any(np.array(dfc[self.target_cols[0]]) < 1)
+                        trans_data1, self.lmda1 = box_cox_transform(x=dfc[self.target_cols[0]],
+                                                                    shift=self.is_zero1,
+                                                                    box_cox_lmda=self.lmda[self.target_cols[0]])
+                        dfc[self.target_cols[0]] = trans_data1
+                    if self.box_cox[self.target_cols[1]]:
+                        self.is_zero2 = np.any(np.array(dfc[self.target_cols[1]]) < 1)
+                        trans_data2, self.lmda2 = box_cox_transform(x=dfc[self.target_cols[1]],
+                                                                    shift=self.is_zero2,
+                                                                    box_cox_lmda=self.lmda[self.target_cols[1]])
+                        dfc[self.target_cols[1]] = trans_data2
+                # Handle trend removal if specified
+                if self.trend is not None:
+                    self.len = len(dfc)
+                    if self.trend[0]:
+                        self.lr_model1 = LinearRegression().fit(np.arange(self.len).reshape(-1, 1), dfc[self.target_cols[0]])
+
+                        if self.trend_type[0] in ["linear", "feature_lr"]:
+                            dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.lr_model1.predict(np.arange(self.len).reshape(-1, 1))
+                        if self.trend_type[0] in ["ses", "feature_ses"]:
+                            self.ses_model1 = ExponentialSmoothing(dfc[self.target_cols[0]], **self.ets_model1).fit(**self.ets_fit1)
+                            dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.ses_model1.fittedvalues.values
+
+                    if self.trend[1]:
+                        self.lr_model2 = LinearRegression().fit(np.arange(self.len).reshape(-1, 1), dfc[self.target_cols[1]])
+
+                        if self.trend_type[1] in ["linear", "feature_lr"]:
+                            dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.lr_model2.predict(np.arange(self.len).reshape(-1, 1))
+
+                        if self.trend_type[1] in ["ses", "feature_ses"]:
+                            self.ses_model2 = ExponentialSmoothing(dfc[self.target_cols[1]], **self.ets_model2).fit(**self.ets_fit2)
+                            dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.ses_model2.fittedvalues.values
+                # Handle differencing if specified
+                if self.difference is not None:
+                    if isinstance(self.difference, dict):
+                        if self.difference[self.target_cols[0]] is not None:
+                            self.orig1 = dfc[self.target_cols[0]].tolist()
+                            dfc[self.target_cols[0]] = np.diff(dfc[self.target_cols[0]], n=self.difference[self.target_cols[0]],
+                                                            prepend=np.repeat(np.nan, self.difference[self.target_cols[0]]))
+                        if self.difference[self.target_cols[1]] is not None:
+                            self.orig2 = dfc[self.target_cols[1]].tolist()
+                            dfc[self.target_cols[1]] = np.diff(dfc[self.target_cols[1]], n=self.difference[self.target_cols[1]],
+                                                            prepend=np.repeat(np.nan, self.difference[self.target_cols[1]]))
+                if self.season_diff is not None:
+                    if isinstance(self.season_diff, dict):
+                        if self.season_diff[self.target_cols[0]] is not None:
+                            self.orig_d1 = dfc[self.target_cols[0]].tolist()
+                            dfc[self.target_cols[0]] = seasonal_diff(dfc[self.target_cols[0]], self.season_diff[self.target_cols[0]])
+                        if self.season_diff[self.target_cols[1]] is not None:
+                            self.orig_d2 = dfc[self.target_cols[1]].tolist()
+                            dfc[self.target_cols[1]] = seasonal_diff(dfc[self.target_cols[1]], self.season_diff[self.target_cols[1]])
+
+                # Create lag features based on n_lag parameter
+                if self.n_lag is not None:
+                    if isinstance(self.n_lag, dict):
+                        for target in self.target_cols:
+                            if isinstance(self.n_lag[target], int):
+                                lags = range(1, self.n_lag[target] + 1)
+                            else:
+                                lags = self.n_lag[target]
+                            for lag in lags:
+                                dfc[f"{target}_lag_{lag}"] = dfc[target].shift(lag)
+                    else:
+                        raise ValueError("n_lag should be a dictionary with target column names as keys.")
+                
+                # Create additional lag transformations if specified (check this later)
+                if self.lag_transform is not None:
+                    for target, funcs in self.lag_transform.items():
+                        if target not in self.target_cols:
+                            raise ValueError(f"Target column {target} not found in the dataframe.")
+                        for func in funcs:
+                            df_array = np.array(dfc[target].shift(funcs[0])) # func[0] is the shift value
+                            if isinstance(func, tuple):
+                                if func[1].__name__ == "rolling_quantile":
+                                    dfc[f"q_{func[3]}_{func[2]}_{func[0]}"] = func[1](df_array, func[2], func[3]) # The first element of tuple is shift value, the second element of the tuple is a function, the third is the window, the fourth is the quantile. EX: (1, rolling_quantile, 30, 0.5) will create a feature with rolling quantile of the target variable shifted by 1.
+                                # write a condition for zero and 1 values (Croston, 2023) here later
+                                # elif func[1].__name__ == "zeroCumulative" or func[1].__name__ == "nzInterval":
+                                #     dfc[f"{func[1].__name__}_{func[2]}"] = func[1](df_array, func[2])
+                                else:
+                                    dfc[f"{func[1].__name__}_{func[2]}_{func[0]}"] = func[1](df_array, func[2]) # The first elemet of the tuple is shift value, the second element of the tuple is a function, the second is the window. EX: (1, rolling_mean, 30) will create a feature with rolling mean of the target variable shifted by 1.
+                
                         
-                    else:
-                        accuracy = eval_metric(y_test, yhat[1])
-#                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+                # Add trend features if specified
+                if self.trend is not None:
+                    # if self.target_cols[0] in dfc.columns:
+                    if self.trend_type[0] == "feature_lr":
+                        dfc["trend1"] = self.lr_model1.predict(np.arange(self.len).reshape(-1, 1))
+                    if self.trend_type[0] == "feature_ses":
+                        dfc["trend1"] = self.ses_model1.fittedvalues.values
+                    # if self.target_cols[1] in dfc.columns:
+                    if self.trend_type[1] == "feature_lr":
+                        dfc["trend2"] = self.lr_model2.predict(np.arange(self.len).reshape(-1, 1))
+                    if self.trend_type[1] == "feature_ses":
+                        dfc["trend2"] = self.ses_model2.fittedvalues.values
 
-            print ("SCORE:", score)
-            return {'loss':score, 'status':STATUS_OK}
+                return dfc.dropna()
             
-        trials = Trials()
+            def fit(self, df, param = None):
+                """
+                Fit the model to the dataframe.
 
-        best_hyperparams = fmin(fn = objective,
-                        space = param_space,
-                        algo = tpe.suggest,
-                        max_evals = eval_num,
-                        trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
-        return space_eval(param_space, best_hyperparams)
-    
-class RandomForest_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_variables = None, trend1  = False, trend2= False, trend_type ="component"):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = RandomForestRegressor
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference1 = difference_1
-        self.difference2 = difference_2
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend1 = trend1
-        self.trend2 = trend2
-        self.trend_type = trend_type
+                Args:
+                    df (pd.DataFrame): Input dataframe.
+                    param (dict, optional): Hyperparameters for model training.
 
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.cat_var is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-        if self.drop_categ is not None:
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
-
-            if (self.trend1 ==True):
-                self.len = len(dfc)
-                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
-
-            if (self.trend2 ==True):
-                self.len = len(dfc)
-                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
-                    
-            if self.difference1 is not None:
-                self.last_tar1 = df[self.target_col[0]].tolist()[-1]
-                for i in range(1, self.difference1+1):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]].diff(1)
-                    
-            if self.difference2 is not None:
-                self.last_tar2 = df[self.target_col[1]].tolist()[-1]
-                for i in range(1, self.difference2+1):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]].diff(1)
-                    
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc[self.target_col[0]+"_lag"+"_"+str(i)] = dfc[self.target_col[0]].shift(i)
-                    
-                for i in self.n_lag:
-                    dfc[self.target_col[1]+"_lag"+"_"+str(i)] = dfc[self.target_col[1]].shift(i)
-
-                
-            if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
-        dfc = dfc.dropna()
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_rf1 =self.model(**param)
-            model_rf2 =self.model(**param)
-        else:
-            model_rf1 =self.model()
-            model_rf2 =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
-        self.model_rf1 = model_rf1.fit(self.X, self.y1)
-        self.model_rf2 = model_rf2.fit(self.X, self.y2)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        tar1_lags = self.y1.tolist()
-        tar2_lags = self.y2.tolist()
-        tar1_predictions = []
-        tar2_predictions = []
-
-        if self.trend1 ==True:
-            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-
-        if self.trend2 ==True:
-            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-        
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag1 = [tar1_lags[-i] for i in self.n_lag]
-                inp_lag2 = [tar2_lags[-i] for i in self.n_lag]
-            else:
-                inp_lag1 = []
-                inp_lag2 = []
-            if self.lag_transform is not None:
-                lag_array = np.array(tar1_lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
-            else:
-                transform_lag = []
-                    
-                    
-            inp = x_var + inp_lag1+inp_lag2+transform_lag
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-
-            pred1 = self.model_rf1.predict(df_inp)[0]
-            tar1_predictions.append(pred1)
-            tar1_lags.append(pred1)
-
-            pred2 = self.model_rf2.predict(df_inp)[0]
-            tar2_predictions.append(pred2)
-            tar2_lags.append(pred2)
-
-        if self.difference1 is not None:
-            tar1_predictions.insert(0, self.last_tar1)
-            forecast1 = np.cumsum(tar1_predictions)[-n_ahead:]
-        else:
-            forecast1 = np.array(tar1_predictions)
-            
-        if self.difference2 is not None:
-            tar2_predictions.insert(0, self.last_tar2)
-            forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
-        else:
-            forecast2 = np.array(tar2_predictions)
-
-        if (self.trend1 ==True)&(self.trend_type =="component"):
-            forecast1 = trend_pred1+forecast1
-
-        if (self.trend2 ==True)&(self.trend_type =="component"):
-            forecast2 = trend_pred2+forecast2
-
-        forecast1 = np.array([max(0, x) for x in forecast1])  
-        forecast2 = np.array([max(0, x) for x in forecast2])  
-
-        return forecast1, forecast2
-    
-    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {i.__name__:[] for i in metrics}
-        self.cv_df = pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
+                Returns:
+                    None
+                """
+                if param is not None:
+                    model1_ = self.model(**param)
+                    model2_ = self.model(**param)
                 else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
+                    model1_ = self.model()
+                    model2_ = self.model()
+                if self.cat_variables is not None:
+                    self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
+                    self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
+                model_train = self.data_prep(df)
+                self.X = model_train.drop(columns=self.target_cols)
+                self.y1 = model_train[self.target_cols[0]]
+                self.y2 = model_train[self.target_cols[1]]
+                self.model1_fit = model1_.fit(self.X, self.y1, verbose=True)
+                self.model2_fit = model2_.fit(self.X, self.y2, verbose=True)
+            
+            def forecast(self, n_ahead, x_test=None):
+                """
+                Forecast future values for n_ahead periods.
 
-            if forecast_idx == 0:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_rf1.feature_names_in_, "importance":self.model_rf1.feature_importances_}).sort_values(by = "importance", ascending = False)
-            else:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_rf2.feature_names_in_, "importance":self.model_rf2.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
+                Args:
+                    n_ahead (int): Number of periods to forecast.
+                    x_test (pd.DataFrame, optional): Exogenous variables.
 
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-    
-    def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
+                Returns:
+                    np.array: Forecasted values.
+                """
+                if x_test is not None:
+                    x_dummy = self.data_prep(x_test)
 
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        def objective(params):
-            model1=self.model(**params)
-            model2 =self.model(**params)
+                target1_lags = self.y1.tolist()
+                target2_lags = self.y2.tolist()
+                tar1_forecasts = []
+                tar2_forecasts = []
 
-            metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-                model_train = self.data_prep(train)
-                
-                self.X, self.y1, self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-                self.model_rf1 = model1.fit(self.X, self.y1)
-                self.model_rf2 = model2.fit(self.X, self.y2)
-                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                
-                if eval_metric.__name__== 'mean_squared_error':
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0], squared=False)
+                if self.trend is not None:
+                    if self.trend_type[0] in ["linear", "feature_lr"]:
+                        trend_pred1 = self.lr_model1.predict(np.arange(self.len, self.len + n_ahead).reshape(-1, 1))
+                    elif self.trend_type[0] in ["ses", "feature_ses"]:
+                        trend_pred1 = self.ses_model1.forecast(n_ahead).values
+
+                    if self.trend_type[1] in ["linear", "feature_lr"]:
+                        trend_pred2 = self.lr_model2.predict(np.arange(self.len, self.len + n_ahead).reshape(-1, 1))
+                    elif self.trend_type[1] in ["ses", "feature_ses"]:
+                        trend_pred2 = self.ses_model2.forecast(n_ahead).values
+
+                # Forecast recursively one step at a time
+                for i in range(n_ahead):
+                    if x_test is not None:
+                        x_var = x_test.iloc[i, :].tolist()
                     else:
-                        accuracy = eval_metric(y_test, yhat[1], squared=False)
-                    
-                else:
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0])
-                        
+                        x_var = []
+
+                    if self.n_lag is not None:
+                        # For the first target variable
+                        if isinstance(self.n_lag[self.target_cols[0]], int):
+                            lags1 = range(1, self.n_lag[self.target_cols[0]] + 1)
+                        else:
+                            lags1 = self.n_lag[self.target_cols[0]]
+                        inp_lag1 = [target1_lags[-lag] for lag in lags1]
+
+                        # For the second target variable
+                        if isinstance(self.n_lag[self.target_cols[1]], int):
+                            lags2 = range(1, self.n_lag[self.target_cols[1]] + 1)
+                        else:
+                            lags2 = self.n_lag[self.target_cols[1]]
+                        inp_lag2 = [target2_lags[-lag] for lag in lags2]
                     else:
-                        accuracy = eval_metric(y_test, yhat[1])
-#                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
+                        inp_lag1 = []
+                        inp_lag2 = []
 
-            print ("SCORE:", score)
-            return {'loss':score, 'status':STATUS_OK}
-            
-        trials = Trials()
-
-        best_hyperparams = fmin(fn = objective,
-                        space = param_space,
-                        algo = tpe.suggest,
-                        max_evals = eval_num,
-                        trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
-        return space_eval(param_space, best_hyperparams)
-    
-class cat_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, cat_variables = None,
-                 trend1  = False, trend2= False, trend_type ="component"):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = CatBoostRegressor
-        self.target_col = target_col
-        self.cat_var = cat_variables
-        self.n_lag = n_lag
-        self.difference1 = difference_1
-        self.difference2 = difference_2
-        self.lag_transform = lag_transform
-        self.trend1 = trend1
-        self.trend2 = trend2
-        self.trend_type = trend_type
-        
-    def data_prep(self, df):
-        dfc = df.copy()
-        # self.raw_df = df.copy()
-        if (self.trend1 ==True):
-            self.len = len(dfc)
-            self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
-            
-            if (self.trend_type == "component"):
-                dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
-
-        if (self.trend2 ==True):
-            self.len = len(dfc)
-            self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
-            
-            if (self.trend_type == "component"):
-                dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
-
-        if self.difference1 is not None:
-            self.last_tar1 = df[self.target_col[0]].tolist()[-1]
-            for i in range(1, self.difference1+1):
-                dfc[self.target_col[0]] = dfc[self.target_col[0]].diff(1)
-                
-        if self.difference2 is not None:
-            self.last_tar2 = df[self.target_col[1]].tolist()[-1]
-            for i in range(1, self.difference2+1):
-                dfc[self.target_col[1]] = dfc[self.target_col[1]].diff(1)
-        
-        if self.cat_var is not None:
-            for c in self.cat_var:
-                dfc[c] = dfc[c].astype('category')
-                
-        if self.n_lag is not None:
-            for i in self.n_lag:
-                dfc[self.target_col[0]+"_lag"+"_"+str(i)] = dfc[self.target_col[0]].shift(i)
-                
-            for i in self.n_lag:
-                dfc[self.target_col[1]+"_lag"+"_"+str(i)] = dfc[self.target_col[1]].shift(i)
-            
-        if self.lag_transform is not None:
-            df_array = np.array(dfc[self.target_col])
-            for i, j in self.lag_transform.items():
-                dfc[i.__name__+"_"+str(j)] = i(df_array, j)
-            
-        dfc = dfc.dropna()
-        return dfc
-
-    def fit(self, df, param = None):
-
-        if param is not None:
-            model_cat1 = self.model(**param)
-            model_cat2 = self.model(**param)
-        else:
-            model_cat1 = self.model()
-            model_cat2 = self.model()
-
-        model_df = self.data_prep(df)
-        
-        self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
-        self.model_cat1 = model_cat1.fit(self.X, self.y1, cat_features=self.cat_var)
-        self.model_cat2 = model_cat2.fit(self.X, self.y2, cat_features=self.cat_var)
-    
-
-    def forecast(self, n_ahead, x_test = None):
-        tar1_lags = self.y1.tolist()
-        tar2_lags = self.y2.tolist()
-        tar1_predictions = []
-        tar2_predictions = []
-
-        if self.trend1 ==True:
-            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-
-        if self.trend2 ==True:
-            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-        
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_test.iloc[i, 0:].tolist()       
-            else:
-                x_var = []
-            if self.n_lag is not None:
-                inp_lag1 = [tar1_lags[-i] for i in self.n_lag]
-                inp_lag2 = [tar2_lags[-i] for i in self.n_lag]
-            else:
-                inp_lag1 = []
-                inp_lag2 = []
-                
-            if self.lag_transform is not None:
-                lag_array = np.array(lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
-            else:
-                transform_lag = []
-
-            inp = x_var + inp_lag1+inp_lag2+transform_lag
-            
-            pred1 = self.model_cat1.predict(inp)
-            tar1_predictions.append(pred1)
-            tar1_lags.append(pred1)
-            
-            pred2 = self.model_cat2.predict(inp)
-            tar2_predictions.append(pred2)
-            tar2_lags.append(pred2)
-            
-        if self.difference1 is not None:
-            tar1_predictions.insert(0, self.last_tar1)
-            forecast1 = np.cumsum(tar1_predictions)[-n_ahead:]
-        else:
-            forecast1 = np.array(tar1_predictions)
-            
-        if self.difference2 is not None:
-            tar2_predictions.insert(0, self.last_tar2)
-            forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
-        else:
-            forecast2 = np.array(tar2_predictions)
-
-        if (self.trend1 ==True)&(self.trend_type =="component"):
-            forecast1 = trend_pred1+forecast1
-
-        if (self.trend2 ==True)&(self.trend_type =="component"):
-            forecast2 = trend_pred2+forecast2
-
-        forecast1 = np.array([max(0, x) for x in forecast1])  
-        forecast2 = np.array([max(0, x) for x in forecast2])  
-            
-        return forecast1, forecast2
-    
-    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {i.__name__:[] for i in metrics}
-        # self.cv_df = pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            # if forecast_idx == 0:
-            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb1.feature_name_, "importance":self.model_lgb1.feature_importances_}).sort_values(by = "importance", ascending = False)
-            # else:
-            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_lgb2.feature_name_, "importance":self.model_lgb2.feature_importances_}).sort_values(by = "importance", ascending = False)
-            # cv_tr_df["fold"] = i
-            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-            
-    def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-
-        def objective(params):
-            model1 =self.model(**params)
-            model2 =self.model(**params)
-
-            
-            metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-                model_train = self.data_prep(train)
-                self.X, self.y1, self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-                self.model_cat1 = model1.fit(self.X, self.y1, cat_features=self.cat_var,
-                            verbose = False)
-                self.model_cat2 = model2.fit(self.X, self.y2, cat_features=self.cat_var,
-                            verbose = False)
-                
-                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                if eval_metric.__name__== 'mean_squared_error':
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0], squared=False)
+                    if self.lag_transform is not None:
+                        transform_lag = []
+                        for target, funcs in self.lag_transform.items():
+                            if target not in self.target_cols:
+                                raise ValueError(f"Target column {target} not found in the dataframe.")
+                            for func in funcs:
+                                series_array = np.array(pd.Series(target1_lags if target == self.target_cols[0] else target2_lags).shift(funcs[0]))
+                                if not isinstance(func, tuple):
+                                    if func[1].__name__ == "rolling_quantile":
+                                        t1 = func[1](series_array, funcs[2], funcs[3])[-1]
+                                    else:
+                                        t1 = func[1](series_array, funcs[2])[-1]
+                                transform_lag.append(t1)
                     else:
-                        accuracy = eval_metric(y_test, yhat[1], squared=False)
-                    
-                else:
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0])
-                        
+                        transform_lag = []
+
+                    inp = x_var + inp_lag1 + inp_lag2 + transform_lag
+                    df_inp = pd.DataFrame(inp).T
+                    df_inp.columns = self.X.columns
+                    pred1 = self.model1_fit.predict(df_inp)[0]
+                    tar1_forecasts.append(pred1)
+                    target1_lags.append(pred1)
+                    pred2 = self.model2_fit.predict(df_inp)[0]
+                    tar2_forecasts.append(pred2)
+                    target2_lags.append(pred2)
+                forecasts1 = np.array(tar1_forecasts)
+                forecasts2 = np.array(tar2_forecasts)
+                # Revert seasonal differencing if applied
+                if self.season_diff is not None:
+                    forecasts1 = invert_seasonal_diff(self.orig_d1, forecasts1, self.season_diff[self.target_cols[0]])
+                    forecasts2 = invert_seasonal_diff(self.orig_d2, forecasts2, self.season_diff[self.target_cols[1]])
+                if self.difference is not None:
+                    forecasts1 = undiff_ts(self.orig1, forecasts1, self.difference[self.target_cols[0]])
+                    forecasts2 = undiff_ts(self.orig2, forecasts2, self.difference[self.target_cols[1]])
+                if self.trend is not None:
+                    if self.trend_type[0] in ["linear", "ses"]:
+                        forecasts1 = trend_pred1 + forecasts1
+                    if self.trend_type[1] in ["linear", "ses"]:
+                        forecasts2 = trend_pred2 + forecasts2
+                forecasts1 = np.array([max(0, x) for x in forecasts1])
+                forecasts2 = np.array([max(0, x) for x in forecasts2])
+                if self.box_cox is not None:
+                    if self.box_cox[self.target_cols[0]]:
+                        forecasts1 = back_box_cox_transform(y_pred=forecasts1,
+                                                            lmda=self.lamda1,
+                                                            shift=self.is_zero1,
+                                                            box_cox_biasadj=self.biasadj[self.target_cols[0]])
+                    if self.box_cox[self.target_cols[1]]:
+                        forecasts2 = back_box_cox_transform(y_pred=forecasts2,
+                                                            lmda=self.lamda2,
+                                                            shift=self.is_zero2,
+                                                            box_cox_biasadj=self.biasadj[self.target_cols[1]])
+                return forecasts1, forecasts2
+            
+            def cv(self, df, cv_split, test_size, metrics, params=None):
+                """"
+                cross-validate the bidirectional XGBoost model with time series split.
+                Args:
+                    df (pd.DataFrame): Input dataframe.
+                    cv_split (int): Number of folds.
+                    test_size (int): Forecast window for each split.
+                    metrics (list): List of evaluation metric functions.
+                    params (dict, optional): Hyperparameters for model training.
+                Returns:
+                    pd.DataFrame: CV performance metrics for each target variable.
+                """
+                tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+                self.metrics_dict = {m.__name__: [] for m in metrics}
+                self.cv_fi = pd.DataFrame()
+                self.cv_forecasts_df = pd.DataFrame()
+                for i, (train_index, test_index) in enumerate(tscv.split(df)):
+                    train, test = df.iloc[train_index], df.iloc[test_index]
+                    x_test = test.drop(columns=self.target_cols)
+                    y_test1 = np.array(test[self.target_cols[0]])
+                    y_test2 = np.array(test[self.target_cols[1]])
+                    if params is not None:
+                        self.fit(train, param=params)
                     else:
-                        accuracy = eval_metric(y_test, yhat[1])
+                        self.fit(train)
+                    forecast_vals1, forecast_vals2 = self.forecast(test_size, x_test=x_test)
+                    forecat_df = test[self.target_cols]
+                    forecat_df["forecasts1"] = forecast_vals1
+                    forecat_df["forecasts2"] = forecast_vals2
+                    self.cv_forecasts_df = pd.concat([self.cv_forecasts_df, forecat_df], axis=0)
+                    for m in metrics:
+                        if m.__name__ == 'mean_squared_error':
+                            val1 = m(y_test1, forecast_vals1, squared=False)
+                            val2 = m(y_test2, forecast_vals2, squared=False)
+                        elif m.__name__ in ['MeanAbsoluteScaledError', 'MedianAbsoluteScaledError']:
+                            val1 = m(y_test1, forecast_vals1, np.array(train[self.target_cols[0]]))
+                            val2 = m(y_test2, forecast_vals2, np.array(train[self.target_cols[1]]))
+                        else:
+                            val1 = m(y_test1, forecast_vals1)
+                            val2 = m(y_test2, forecast_vals2)
+                        self.metrics_dict[m.__name__].append([val1, val2])
+                    cv_tr_df1 = pd.DataFrame({"feat_name": self.model1_fit.feature_names_in_,
+                                            "importance": self.model1_fit.feature_importances_}).sort_values(by="importance", ascending=False)
+                    cv_tr_df1["target"] = self.target_cols[0]
+                    cv_tr_df1["fold"] = i
+                    cv_tr_df2 = pd.DataFrame({"feat_name": self.model2_fit.feature_names_in_,
+                                            "importance": self.model2_fit.feature_importances_}).sort_values(by="importance", ascending=False)
+                    cv_tr_df2["target"] = self.target_cols[1]
+                    cv_tr_df2["fold"] = i
+                    self.cv_fi = pd.concat([self.cv_fi, cv_tr_df1, cv_tr_df2], axis=0)
+                overall = [[m.__name__, np.mean([v[0] for v in self.metrics_dict[m.__name__]])] for m in metrics]
+                # pd.DataFrame(overall).rename(columns={0: "eval_metric", 1: "score1", 2: "score2"})
+                return pd.DataFrame(overall).rename(columns={0: "eval_metric", 1: f"score_{self.target_cols[0]}", 2: f"score_{self.target_cols[1]}"})
 
-                metric.append(accuracy)
-            score = np.mean(metric)
+class VARModel:
+    """
+    Vector Autoregressive Model class supporting data preprocessing, fitting, forecasting, and cross-validation.
 
-            print ("SCORE:", score)
-            return {'loss':score, 'status':STATUS_OK}
+    Parameters
+    ----------
+    target_cols : List[str]
+        Target columns for the VAR model (dependent variables).
+    lags : Dict[str, List[int]]
+        Dictionary specifying lags for each target variable. For example, {'target1': [1, 2], 'target2': [1, 2, 3]} or {'target1': 3, 'target2': 5}.
+    lag_transform : Optional[Dict[str, List[tuple]]] (default=None)
+        Dictionary specifying lag transformations per target (e.g. rolling, quantile), each as a list of tuples:
+        (lag, func, window, [quantile]). For example, { 'target1': [(1, rolling_mean, 30), (2, rolling_quantile, 30, 0.5)] }.
+    difference : Optional[Dict[str, int]] (default=None)
+        Dictionary specifying order of differencing for each variable. For example, {'target1': 1, 'target2': 2}.
+    seasonal_diff : Optional[Dict[str, int]] (default=None)
+        Dictionary specifying seasonal differencing for each variable. For example, {'target1': 12, 'target2': 7}.
+    trend : Optional[Dict[str, bool]] (default=None)
+        Dictionary specifying which variables require detrending.
+    trend_types : Optional[Dict[str, str]] (default=None)
+        Dictionary specifying trend type for each variable: "linear", "ses", "feature_lr", or "feature_ses".
+    ets_params : Optional[Dict[str, tuple]] (default=None)
+        Dictionary specifying params for ExponentialSmoothing per variable.
+        For example, {'target1': ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}), 'target2': ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True})}.
+    box_cox : Optional[Dict[str, bool]] (default=None)
+        Dictionary specifying which variables require Box-Cox transform.
+    box_cox_lmda : Optional[Dict[str, float]] (default=None)
+        Dictionary of Box-Cox lambdas for each variable.
+    box_cox_biasadj : bool or Dict[str, bool] (default=False)
+        Whether to use bias adjustment for Box-Cox for each variable.
+    add_constant : bool (default=True)
+        If True, add a constant column to exogenous variables.
+    cat_variables : Optional[List[str]] (default=None)
+        List of categorical columns to one-hot encode.
+    verbose : bool (default=False)
+        If True, print verbose messages.
 
+    Methods
+    -------
+    data_prep(df)
+        Prepare the data for VAR model.
+    fit(df_train)
+        Fit the VAR model to training data.
+    forecast(H, exog=None)
+        Forecast H steps ahead.
+    predict(X)
+        Predict with model coefficients.
+    cv_var(df, target_col, cv_split, test_size, metrics)
+        Cross-validate VAR model.
 
-        trials = Trials()
+    Notes
+    -----
+    - Assumes external utility functions exist for Box-Cox, seasonal differencing, etc.
+    """
 
-        best_hyperparams = fmin(fn = objective,
-                        space = param_space,
-                        algo = tpe.suggest,
-                        max_evals = eval_num,
-                        trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ['depth', 'iterations'] else best_hyperparams[i] for i in best_hyperparams}
-        return space_eval(param_space, best_hyperparams)
-    
-class Cubist_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_variables = None, trend1  = False, trend2= False, trend_type ="component"):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = Cubist
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference1 = difference_1
-        self.difference2 = difference_2
-        self.lag_transform = lag_transform
-        self.cat_variables = cat_variables
-        self.trend1 = trend1
-        self.trend2 = trend2
-        self.trend_type = trend_type
-
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.cat_var is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-        if self.drop_categ is not None:
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
-
-            if (self.trend1 ==True):
-                self.len = len(dfc)
-                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
-
-            if (self.trend2 ==True):
-                self.len = len(dfc)
-                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
-                    
-            if self.difference1 is not None:
-                self.last_tar1 = df[self.target_col[0]].tolist()[-1]
-                for i in range(1, self.difference1+1):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]].diff(1)
-                    
-            if self.difference2 is not None:
-                self.last_tar2 = df[self.target_col[1]].tolist()[-1]
-                for i in range(1, self.difference2+1):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]].diff(1)
-                    
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc[self.target_col[0]+"_lag"+"_"+str(i)] = dfc[self.target_col[0]].shift(i)
-                    
-                for i in self.n_lag:
-                    dfc[self.target_col[1]+"_lag"+"_"+str(i)] = dfc[self.target_col[1]].shift(i)
-
-                
-            if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
-        dfc = dfc.dropna()
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_cub1 =self.model(**param)
-            model_cub2 =self.model(**param)
-        else:
-            model_cub1 =self.model()
-            model_cub2 =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
-        self.model_cub1 = model_cub1.fit(self.X, self.y1)
-        self.model_cub2 = model_cub2.fit(self.X, self.y2)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        tar1_lags = self.y1.tolist()
-        tar2_lags = self.y2.tolist()
-        tar1_predictions = []
-        tar2_predictions = []
-
-        if self.trend1 ==True:
-            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-
-        if self.trend2 ==True:
-            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-        
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag1 = [tar1_lags[-i] for i in self.n_lag]
-                inp_lag2 = [tar2_lags[-i] for i in self.n_lag]
-            else:
-                inp_lag1 = []
-                inp_lag2 = []
-            if self.lag_transform is not None:
-                lag_array = np.array(tar1_lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
-            else:
-                transform_lag = []
-                    
-                    
-            inp1 = x_var + inp_lag1+inp_lag2+transform_lag
-            df_inp = pd.DataFrame(inp1).T
-            df_inp.columns = self.X.columns
-
-            pred1 = self.model_cub1.predict(df_inp)[0]
-            tar1_predictions.append(pred1)
-            tar1_lags.append(pred1)
-
-            pred2 = self.model_cub2.predict(df_inp)[0]
-            tar2_predictions.append(pred2)
-            tar2_lags.append(pred2)
-
-        if self.difference1 is not None:
-            tar1_predictions.insert(0, self.last_tar1)
-            forecast1 = np.cumsum(tar1_predictions)[-n_ahead:]
-        else:
-            forecast1 = np.array(tar1_predictions)
-            
-        if self.difference2 is not None:
-            tar2_predictions.insert(0, self.last_tar2)
-            forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
-        else:
-            forecast2 = np.array(tar2_predictions)
-
-        if (self.trend1 ==True)&(self.trend_type =="component"):
-            forecast1 = trend_pred1+forecast1
-
-        if (self.trend2 ==True)&(self.trend_type =="component"):
-            forecast2 = trend_pred2+forecast2
-
-        forecast1 = np.array([max(0, x) for x in forecast1])  
-        forecast2 = np.array([max(0, x) for x in forecast2])  
-
-        return forecast1, forecast2
-    
-    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {i.__name__:[] for i in metrics}
-        # self.cv_df = pd.DataFrame()
-
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            # if forecast_idx == 0:
-            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_rf1.feature_names_in_, "importance":self.model_rf1.feature_importances_}).sort_values(by = "importance", ascending = False)
-            # else:
-            #     cv_tr_df = pd.DataFrame({"feat_name":self.model_rf2.feature_names_in_, "importance":self.model_rf2.feature_importances_}).sort_values(by = "importance", ascending = False)
-            # cv_tr_df["fold"] = i
-            # self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-    
-    def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
-
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        def objective(params):
-            model1=self.model(**params)
-            model2 =self.model(**params)
-
-            metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-                model_train = self.data_prep(train)
-                
-                self.X, self.y1,  self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-                self.model_cub1 = model1.fit(self.X, self.y1)
-                self.model_cub2 = model2.fit(self.X, self.y2)
-                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                
-                if eval_metric.__name__== 'mean_squared_error':
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0], squared=False)
-                    else:
-                        accuracy = eval_metric(y_test, yhat[1], squared=False)
-                    
-                else:
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0])
-                        
-                    else:
-                        accuracy = eval_metric(y_test, yhat[1])
-#                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
-
-            print ("SCORE:", score)
-            return {'loss':score, 'status':STATUS_OK}
-            
-        trials = Trials()
-
-        best_hyperparams = fmin(fn = objective,
-                        space = param_space,
-                        algo = tpe.suggest,
-                        max_evals = eval_num,
-                        trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
-        return space_eval(param_space, best_hyperparams)
-
-class AdaBoost_bidirect_forecaster:
-    def __init__(self, target_col, n_lag = None, difference_1 = None, difference_2 = None, lag_transform = None, 
-                 cat_variables = None,  trend1  = False, trend2= False, trend_type ="component"):
-        if (n_lag == None) and (lag_transform == None):
-            raise ValueError('Expected either n_lag or lag_transform args')
-        self.model = AdaBoostRegressor
-        self.target_col = target_col
-        self.n_lag = n_lag
-        self.difference1 = difference_1
-        self.difference2 = difference_2
-        self.lag_transform = lag_transform
-        self.cat_variables=cat_variables
-        self.trend1 = trend1
-        self.trend2 = trend2
-        self.trend_type = trend_type
-
-    def data_prep(self, df):
-        dfc = df.copy()
-        if self.cat_var is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
-            dfc = pd.get_dummies(dfc)
-        if self.drop_categ is not None:
-            for i in self.drop_categ:
-                dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if (self.target_col[0] in dfc.columns) | (self.target_col[1] in dfc.columns):
-
-            if (self.trend1 ==True):
-                self.len = len(dfc)
-                self.lr_model1 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[0]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]]-self.lr_model1.predict(np.array(range(self.len)).reshape(-1, 1))
-
-            if (self.trend2 ==True):
-                self.len = len(dfc)
-                self.lr_model2 = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[self.target_col[1]])
-                
-                if (self.trend_type == "component"):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]]-self.lr_model2.predict(np.array(range(self.len)).reshape(-1, 1))
-                    
-            if self.difference1 is not None:
-                self.last_tar1 = df[self.target_col[0]].tolist()[-1]
-                for i in range(1, self.difference1+1):
-                    dfc[self.target_col[0]] = dfc[self.target_col[0]].diff(1)
-                    
-            if self.difference2 is not None:
-                self.last_tar2 = df[self.target_col[1]].tolist()[-1]
-                for i in range(1, self.difference2+1):
-                    dfc[self.target_col[1]] = dfc[self.target_col[1]].diff(1)
-                    
-            if self.n_lag is not None:
-                for i in self.n_lag:
-                    dfc[self.target_col[0]+"_lag"+"_"+str(i)] = dfc[self.target_col[0]].shift(i)
-                    
-                for i in self.n_lag:
-                    dfc[self.target_col[1]+"_lag"+"_"+str(i)] = dfc[self.target_col[1]].shift(i)
-
-                
-            if self.lag_transform is not None:
-                df_array = np.array(dfc[self.target_col])
-                for i, j in self.lag_transform.items():
-                    dfc[i.__name__+"_"+str(j)] = i(df_array, j)    
-        dfc = dfc.dropna()
-        return dfc
-
-    def fit(self, df, param = None):
-        if param is not None:
-            model_ada1 =self.model(**param)
-            model_ada2 =self.model(**param)
-        else:
-            model_ada1 =self.model()
-            model_ada2 =self.model()
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        model_df = self.data_prep(df)
-        self.X, self.y1, self.y2 = model_df.drop(columns =self.target_col), model_df[self.target_col[0]], model_df[self.target_col[1]]
-        self.model_ada1 = model_ada1.fit(self.X, self.y1)
-        self.model_ada2 = model_ada2.fit(self.X, self.y2)
-
-    def forecast(self, n_ahead, x_test = None):
-        if x_test is not None:
-            x_dummy = self.data_prep(x_test)
-        tar1_lags = self.y1.tolist()
-        tar2_lags = self.y2.tolist()
-        tar1_predictions = []
-        tar2_predictions = []
-
-        if self.trend1 ==True:
-            trend_pred1= self.lr_model1.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-
-        if self.trend2 ==True:
-            trend_pred2= self.lr_model2.predict(np.array(range(self.len, self.len+n_ahead)).reshape(-1, 1))
-        
-        for i in range(n_ahead):
-            if x_test is not None:
-                x_var = x_dummy.iloc[i, 0:].tolist()
-            else:
-                x_var = []
-                
-            if self.n_lag is not None:
-                inp_lag1 = [tar1_lags[-i] for i in self.n_lag]
-                inp_lag2 = [tar2_lags[-i] for i in self.n_lag]
-            else:
-                inp_lag1 = []
-                inp_lag2 = []
-            if self.lag_transform is not None:
-                lag_array = np.array(tar1_lags) # array is needed for transformation fuctions
-                transform_lag = []
-                for method, lag in self.lag_transform.items():
-                    tl = method(lag_array, lag)[-1]
-                    transform_lag.append(tl)
-            else:
-                transform_lag = []
-                    
-                    
-            inp = x_var + inp_lag1+inp_lag2+transform_lag
-            df_inp = pd.DataFrame(inp).T
-            df_inp.columns = self.X.columns
-
-            pred1 = self.model_ada1.predict(df_inp)[0]
-            tar1_predictions.append(pred1)
-            tar1_lags.append(pred1)
-
-            pred2 = self.model_ada2.predict(df_inp)[0]
-            tar2_predictions.append(pred2)
-            tar2_lags.append(pred2)
-
-        if self.difference1 is not None:
-            tar1_predictions.insert(0, self.last_tar1)
-            forecast1 = np.cumsum(tar1_predictions)[-n_ahead:]
-        else:
-            forecast1 = np.array(tar1_predictions)
-            
-        if self.difference2 is not None:
-            tar2_predictions.insert(0, self.last_tar2)
-            forecast2 = np.cumsum(tar2_predictions)[-n_ahead:]
-        else:
-            forecast2 = np.array(tar2_predictions)
-
-        if (self.trend1 ==True)&(self.trend_type =="component"):
-            forecast1 = trend_pred1+forecast1
-
-        if (self.trend2 ==True)&(self.trend_type =="component"):
-            forecast2 = trend_pred2+forecast2
-
-        forecast1 = np.array([max(0, x) for x in forecast1])  
-        forecast2 = np.array([max(0, x) for x in forecast2])  
-
-        return forecast1, forecast2
-    
-    def cv(self, df, forecast_idx, cv_split, test_size, metrics, params = None):
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        self.metrics_dict = {i.__name__:[] for i in metrics}
-        self.cv_df = pd.DataFrame()
-
-        for i, (train_index, test_index) in enumerate(tscv.split(df)):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[self.target_col[forecast_idx]])
-            
-            if params is not None:
-                self.fit(train, param = params)
-            else:
-                self.fit(train)
-            
-            bb_forecast = self.forecast(test_size, x_test=x_test)[forecast_idx]
-
-            for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col[forecast_idx]]))
-                else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
-
-            if forecast_idx == 0:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_ada1.feature_names_in_, "importance":self.model_ada1.feature_importances_}).sort_values(by = "importance", ascending = False)
-            else:
-                cv_tr_df = pd.DataFrame({"feat_name":self.model_ada2.feature_names_in_, "importance":self.model_ada2.feature_importances_}).sort_values(by = "importance", ascending = False)
-            cv_tr_df["fold"] = i
-            self.cv_df = pd.concat([self.cv_df, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-    
-    def tune_model(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-        tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-        
-        def objective(params):
-            model1=self.model(**params)
-            model2 =self.model(**params)
-
-            metric = []
-            for train_index, test_index in tscv.split(df):
-                train, test = df.iloc[train_index], df.iloc[test_index]
-                x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-                model_train = self.data_prep(train)
-                
-                self.X, self.y1, self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-                self.model_ada1 = model1.fit(self.X, self.y1)
-                self.model_ada2 = model2.fit(self.X, self.y2)
-                yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-                
-                if eval_metric.__name__== 'mean_squared_error':
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0], squared=False)
-                    else:
-                        accuracy = eval_metric(y_test, yhat[1], squared=False)
-                    
-                else:
-                    if forecast_col == self.target_col[0]:
-                        accuracy = eval_metric(y_test, yhat[0])
-                        
-                    else:
-                        accuracy = eval_metric(y_test, yhat[1])
-#                 print(str(accuracy)+" and len is "+str(len(test)))
-                metric.append(accuracy)
-            score = np.mean(metric)
-
-            print ("SCORE:", score)
-            return {'loss':score, 'status':STATUS_OK}
-            
-        trials = Trials()
-
-        best_hyperparams = fmin(fn = objective,
-                        space = param_space,
-                        algo = tpe.suggest,
-                        max_evals = eval_num,
-                        trials = trials)
-        # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-        #                    else best_hyperparams[i] for i in best_hyperparams}
-        return space_eval(param_space, best_hyperparams)
-
-
-import statsmodels.api as sm
-class VAR_model:
-    def __init__(self, target_cols, lag_dict, lag_transform = None, diff_dict = None, seasonal_diff =None,
-                 trend = None,trend_types=None,ets_params = None, box_cox = None, box_cox_lmda = None, box_cox_biasadj= False, add_constant = True,
-                 cat_variables = None, verbose = False):
-        
+    def __init__(
+        self,
+        target_cols: List[str],
+        lags: Dict[str, List[int]],
+        lag_transform: Optional[Dict[str, List[tuple]]] = None,
+        difference: Optional[Dict[str, int]] = None,
+        seasonal_diff: Optional[Dict[str, int]] = None,
+        trend: Optional[Dict[str, bool]] = None,
+        trend_types: Optional[Dict[str, str]] = None,
+        ets_params: Optional[Dict[str, tuple]] = None,
+        box_cox: Optional[Dict[str, bool]] = None,
+        box_cox_lmda: Optional[Dict[str, float]] = None,
+        box_cox_biasadj: Any = False,
+        add_constant: bool = True,
+        cat_variables: Optional[List[str]] = None,
+        verbose: bool = False
+    ):
         self.target_cols = target_cols
-        self.cat_variables = cat_variables
-        
-        self.box_cox = box_cox
-        if self.box_cox is not None:
-            if not isinstance(self.box_cox, dict):
-                raise TypeError("box_cox must be a dictionary of target values")
-            
-        self.lamdas = box_cox_lmda
-        self.biasadj = box_cox_biasadj
-        if (self.biasadj ==False) & (self.box_cox is not None): #define default value of box_cox_biasadj
-            self.biasadj= {}
-            for i in self.box_cox:
-                self.biasadj[i] = False
-
+        self.lags = lags
+        self.lag_transform = lag_transform
+        self.diffs = difference
+        self.season_diffs = seasonal_diff
         self.trend = trend
-        
-        if self.trend is not None:
-            if not isinstance(self.trend, dict):
-                raise TypeError("trend must be a dictionary of target values")
-        
         self.trend_types = trend_types
         self.ets_params = ets_params
-        self.lag_dict = lag_dict
-        self.diffs = diff_dict
-        self.season_diffs = seasonal_diff
-        self.lag_transform = lag_transform
+        self.box_cox = box_cox
+        self.lamdas = box_cox_lmda
+        self.biasadj = box_cox_biasadj
         self.cons = add_constant
+        self.cat_variables = cat_variables
+        self.verbose = verbose
 
-        if (self.trend is not None) & (self.trend_types is None): #definin default trend type when trend type is not passed
-            self.trend_types = {}
-            for i in self.trend:
-                self.trend_types[i] = "linear"
+        # Handle box_cox bias adjustment dict default
+        if self.box_cox is not None and not isinstance(self.box_cox, dict):
+            raise TypeError("box_cox must be a dictionary of target values")
+        if isinstance(self.box_cox, dict) and not isinstance(self.biasadj, dict):
+            self.biasadj = {k: False for k in self.box_cox}
+        
+        # Handle trend default types
+        if self.trend is not None and not isinstance(self.trend, dict):
+            raise TypeError("trend must be a dictionary of target values")
+        if self.trend is not None and self.trend_types is None:
+            self.trend_types = {k: "linear" for k in self.trend}
 
-    def data_prep(self, df):
+    def data_prep(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Prepare the data according to the model configuration.
+        Applies categorical encoding, Box-Cox, detrending, differencing, seasonal differencing, lags, and lag transforms.
+        Drops rows with any NaN after transformation.
+        """
         dfc = df.copy()
+        # Handle categorical variables
         if self.cat_variables is not None:
-            for col, cat in self.cat_var.items():
-                dfc[col] = dfc[col].astype('category')
-                dfc[col] = dfc[col].cat.set_categories(cat)
+            # self.cat_var = {c: sorted(dfc[c].drop_duplicates().tolist()) for c in self.cat_variables}
+            # self.drop_categ = [self.cat_var[c][0] for c in self.cat_variables]
+            for col, cats in self.cat_var.items():
+                dfc[col] = pd.Categorical(dfc[col], categories=cats)
             dfc = pd.get_dummies(dfc)
-            
             for i in self.drop_categ:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
-                
-        if all(elem in dfc.columns for elem in self.target_cols):
+        
+        # Check all target columns exist
+        if not all(col in dfc.columns for col in self.target_cols):
 
+            # Box-Cox transformation
             if self.box_cox is not None:
                 if self.lamdas is None:
                     self.lamdas = {i: None for i in self.box_cox}
-                    
                 self.is_zeros = {i: None for i in self.lamdas}
-                
                 for k, lm in self.lamdas.items():
-                    
-                    self.is_zeros[k] = np.any(np.array(dfc[k]) < 1)
-                    trans_data, self.lamdas[k] = box_cox_transform(x = dfc[k], shift = self.is_zeros[k], box_cox_lmda=lm)
-                    if self.box_cox[k] ==True:
+                    self.is_zeros[k] = (dfc[k] < 1).any()
+                    trans_data, self.lamdas[k] = box_cox_transform(
+                        x=dfc[k], shift=self.is_zeros[k], box_cox_lmda=lm
+                    )
+                    if self.box_cox.get(k, False):
                         dfc[k] = trans_data
 
+            # Detrending
             if self.trend is not None:
                 self.tr_models = {i: None for i in self.trend_types}
                 self.len = len(dfc)
                 for k, tr in self.trend_types.items():
-                    if (tr == "linear") | (tr == "feature_lr"):
-                        self.tr_models[k] = LinearRegression().fit(np.array(range(self.len)).reshape(-1, 1), dfc[k])
-                        if (tr == "linear"):
-                            dfc[k] = dfc[k]-self.tr_models[k].predict(np.array(range(self.len)).reshape(-1, 1))
+                    if tr in ["linear", "feature_lr"]:
+                        lr = LinearRegression()
+                        lr.fit(np.arange(self.len).reshape(-1, 1), dfc[k])
+                        self.tr_models[k] = lr
+                        if tr == "linear":
+                            dfc[k] = dfc[k] - lr.predict(np.arange(self.len).reshape(-1, 1))
+                    elif tr in ["ses", "feature_ses"]:
+                        ets = ExponentialSmoothing(dfc[k], **self.ets_params[k][0])
+                        fit = ets.fit(**self.ets_params[k][1])
+                        self.tr_models[k] = fit
+                        if tr == "ses":
+                            dfc[k] = dfc[k] - fit.fittedvalues.values
 
-                    if (tr == "ses")|(tr == "feature_ses"):
-                        self.tr_models[k] = ExponentialSmoothing(dfc[k], **self.ets_param[k][0]).fit(**self.ets_param[k][1])
-                        if (tr == "ses"):
-                            dfc[k] = dfc[k]-self.tr_models[k].fittedvalues.values
-            
+            # Differencing
             if self.diffs is not None:
-                self.origs = {i: None for i in self.diffs}
+                self.origs = {i: dfc[i].tolist() for i in self.diffs}
                 for x, d in self.diffs.items():
-                    self.origs[x] = dfc[x].tolist()
-                    dfc[x] = np.diff(dfc[x], n= d, prepend=np.repeat(np.nan, d))
-                    
+                    dfc[x] = np.diff(dfc[x], n=d, prepend=np.repeat(np.nan, d))
+
+            # Seasonal differencing
             if self.season_diffs is not None:
-                self.orig_ds = {i: None for i in self.season_diffs}
-                for w, s in self.diffs.items():
-                    self.orig_ds[w] = dfc[w].tolist()
+                self.orig_ds = {i: dfc[i].tolist() for i in self.season_diffs}
+                for w, s in self.season_diffs.items():
                     dfc[w] = seasonal_diff(dfc[w], s)
-            
-            for a, lags in self.lag_dict.items():
-                if len(lags)>0: # to ensure that given lags are not empty for target variables
-                    for lg in lags:
-                        dfc[str(a)+"_lag"+"_"+str(lg)] = dfc[a].shift(lg)
-                    
+
+            # Lag features
+            if self.lags is not None:
+                for a, lags in self.lags.items():
+                    lag_used = lags if isinstance(lags, list) else range(1, lags + 1) # Ensure lags is a list, even if a single int
+                    for lg in lag_used:
+                        dfc[f"{a}_lag_{lg}"] = dfc[a].shift(lg)
+
+            # Lag transforms
             if self.lag_transform is not None:
-                for n, k in self.lag_transform.items():
-                    for f in k:
+                for n, transforms in self.lag_transform.items():
+                    for f in transforms:
                         df_array = np.array(dfc[n].shift(f[0]))
                         if f[1].__name__ == "rolling_quantile":
-                            dfc["q_"+str(f[3])+"_"+str(n)+"_"+str(f[0])+"_w"+str(f[2])] = f[1](df_array, f[2], f[3])
+                            dfc[f"q_{f[3]}_{n}_{f[0]}_w{f[2]}"] = f[1](df_array, f[2], f[3])
                         else:
-                            dfc[f[1].__name__+"_"+str(n)+"_"+str(f[0])+"_"+str(f[2])] = f[1](df_array, f[2])
-                            
-                
-            # for i in self.lag_list2:
-            #     dfc[self.target_col[1]+"_lag"+"_"+str(i)] = dfc[self.target_col[1]].shift(i)
+                            dfc[f"{f[1].__name__}_{n}_{f[0]}_{f[2]}"] = f[1](df_array, f[2])
+
         dfc = dfc.dropna()
         return dfc
 
-    # def summary(self):
-    #     from scipy.stats import t
-    #     output = pd.DataFrame()
-    #     for i in range(self.N):
-    #         wi = self.posterior[i]
-    #         W = np.diag(wi)
+    def fit(self, df_train: pd.DataFrame) -> None:
+        """
+        Fit the VAR model to the training data.
 
-    #         X_weight = np.dot(W, self.Xs)
-    #         y_weight= np.dot(W, self.ys)
-    #         coeff_state = np.linalg.lstsq(X_weight, y_weight, rcond=None)[0]
+        Parameters
+        ----------
+        df_train : pd.DataFrame
+            Training data.
+        """
+        if self.cat_variables is not None:
+            self.cat_var = {c: sorted(df_train[c].drop_duplicates().tolist()) for c in self.cat_variables}
+            self.drop_categ = [self.cat_var[c][0] for c in self.cat_variables]
 
-            
-    #         res= y_weight-(coeff_state.T @ X_weight.T).T
-    #         kp = self.Xs.shape[1]
-    #         dfg = self.ys.shape[0]-kp
-            
-            
-    #         state_index = self.ys.shape[1]*self.Xs.shape[1]*[f"state_{i}"]
-    #         endog_index = []
-    #         coef_index = self.ys.shape[1]*self.col_names
-    #         endogs = pd.DataFrame()
-    #         for k in range(self.ys.shape[1]):
-                
-    #             endog_idx = [f"results for {self.target_col[k]}" for i in range(self.Xs.shape[1])]
-    #             endog_index+=endog_idx
-                
-                
-    #             RSS = np.sum(res[:,k]**2)
-    #             SEs = np.sqrt((RSS/dfg) * np.diag(np.linalg.inv(X_weight.T @ X_weight)))
-    #             t_vals = coeff_state[:, k]/SEs
-    #             p_values = (1 - t.cdf(np.abs(t_vals), dfg)) * 2
-    #             result = np.round(np.column_stack((coeff_state[:, k], SEs, t_vals, p_values)), 4)
-    #             result = pd.DataFrame(result)
-    #             # coef_names = [f"state_{i}_{item}" for item in self.col_names]
-                
-    #             endogs = pd.concat([endogs, result])
-    #         new_idx = [state_index, endog_index, coef_index]
-    #         # print(len(state_index), len(endog_index), len(coef_index))
-    #         endogs.index = pd.MultiIndex.from_arrays(new_idx)
-    #         endogs.columns = ["coefficients", "SE", "t-values", "p-values"]
-    #         output = pd.concat([output, endogs])
+        df = self.data_prep(df_train)
+        X = df.drop(columns=self.target_cols)
+        if self.cons:
+            X = sm.add_constant(X)
+        self.X = np.array(X)
+        self.y = np.array(df[self.target_cols])
+        self.coeffs = np.linalg.lstsq(self.X, self.y, rcond=None)[0]
 
-    #     return output
+    def predict(self, X: List[float]) -> np.ndarray:
+        """
+        Predict the model output for input X.
 
-        
+        Parameters
+        ----------
+        X : pd.DataFrame or List[float] or np.ndarray
+            Feature DataFrame for prediction.
 
-    def forecast(self, H, exog=None):
-        y_lists = {j: self.y[:,i].tolist() for i,j in enumerate(self.target_cols)}
+        Returns
+        -------
+        np.ndarray
+            Model predictions for each target.
+        """
+        arr = np.array(X)
+        return np.dot(self.coeffs.T, arr.T)
+
+    def forecast(self, H: int, exog: Optional[pd.DataFrame] = None) -> Dict[str, np.ndarray]:
+        """
+        Forecast H steps ahead.
+
+        Parameters
+        ----------
+        H : int
+            Number of steps to forecast.
+        exog : Optional[pd.DataFrame]
+            Exogenous variables for forecasting.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Dictionary of forecasts for each target variable.
+        """
+        y_lists = {j: self.y[:, i].tolist() for i, j in enumerate(self.target_cols)} # Initialize lists for each target variable
         if exog is not None:
-            if self.cons == True:
+            if self.cons:
                 if exog.shape[0] == 1:
                     exog.insert(0, 'const', 1)
                 else:
@@ -3666,275 +1428,138 @@ class VAR_model:
 
         forecasts = {i: [] for i in self.target_cols}
 
+        # Trend forecasting
         if self.trend is not None:
-            # self.tr_models = {f"{i}": None for i in self.trend_types}
-            # self.len = len(dfc)
             trend_preds = {i: [] for i in self.trend_types}
             for k, tr in self.trend_types.items():
-                if (tr == "linear") | (tr == "feature_lr"):
-                    trend_preds[k] = self.tr_models[k].predict(np.array(range(self.len, self.len+H)).reshape(-1, 1))
-    
-                if (tr == "ses")|(tr == "feature_ses"):
-                    trend_preds[k] = self.tr_models[k].forecast(n_ahead).values
+                if tr in ["linear", "feature_lr"]:
+                    trend_preds[k] = self.tr_models[k].predict(np.arange(self.len, self.len+H).reshape(-1, 1))
+                elif tr in ["ses", "feature_ses"]:
+                    trend_preds[k] = self.tr_models[k].forecast(H).values
 
-        for t in range(H): # recursion step
+        for t in range(H):
+            # Exogenous input for step t
             if exog is not None:
                 exo_inp = exog[t].tolist()
             else:
-                if self.cons == True:
-                    exo_inp = [1]
-                else:
-                    exo_inp = []
+                exo_inp = [1] if self.cons else []
 
-
+            # Lagged features
+            lags = []
             if self.lag_dict is not None:
-                lags = []
                 for tr, v in y_lists.items():
-                    if len(self.lag_dict[tr])>0: # to ensure that given lags are not empty for target variables
+                    if self.lag_dict[tr]:
                         ys = [v[-x] for x in self.lag_dict[tr]]
-                        lags+=ys
-            else:
-                lags = []
+                        lags += ys
 
-                # inp = exo_inp+lags1+lags2
-            
+            # Lag transforms
+            transform_lag = []
             if self.lag_transform is not None:
-                transform_lag = []    
-                for n, k in self.lag_transform.items():
-                    for f in k:
+                for n, transforms in self.lag_transform.items():
+                    for f in transforms:
                         df_array = np.array(pd.Series(lags).shift(f[0]-1))
                         if f[1].__name__ == "rolling_quantile":
                             t1 = f[1](df_array, f[2], f[3])[-1]
                         else:
                             t1 = f[1](df_array, f[2])[-1]
                         transform_lag.append(t1)
-            else:
-                transform_lag = []
 
-            
+            # Trend feature
+            trend_var = []
             if self.trend is not None:
-                trend_var = []
                 for k, tr in self.trend_types.items():
-                    if (tr == "feature_lr")|(tr == "feature_ses"):
+                    if tr in ["feature_lr", "feature_ses"]:
                         trend_var.append(trend_preds[k][t])
-                    else:
-                        trend_var = []
-            else:
-                trend_var = [] 
-                
-            
-            inp = exo_inp+lags+transform_lag+trend_var
 
+            inp = exo_inp + lags + transform_lag + trend_var
             pred = self.predict(inp)
-            for id, ff in enumerate(forecasts):
-                forecasts[ff].append(pred[id])
-                y_lists[ff].append(pred[id])
+            for id_, ff in enumerate(forecasts):
+                forecasts[ff].append(pred[id_])
+                y_lists[ff].append(pred[id_])
 
-
+        # Invert seasonal difference
         if self.season_diffs is not None:
             for s in self.orig_ds:
                 forecasts[s] = invert_seasonal_diff(self.orig_ds[s], np.array(forecasts[s]), self.season_diffs[s])
-                
+
+        # Invert difference
         if self.diffs is not None:
             for d in self.diffs:
                 forecasts[d] = undiff_ts(self.origs[d], np.array(forecasts[d]), self.diffs[d])
-                
+
+        # Add back trend
         if self.trend is not None:
             for k, tr in self.trend_types.items():
-                if (tr =="linear")|(tr =="ses"):
-                    forecasts[k] = trend_preds[k]+forecasts[k]
-        for f in forecasts:    
+                if tr in ["linear", "ses"]:
+                    forecasts[k] = trend_preds[k] + forecasts[k]
+
+        # Non-negativity
+        for f in forecasts:
             forecasts[f] = np.array([max(0, x) for x in forecasts[f]])
 
+        # Invert Box-Cox
         if self.box_cox is not None:
             for k, lmd in self.lamdas.items():
-                if self.box_cox[k]==True:
-                    forecasts[k] = back_box_cox_transform(y_pred = forecasts[k], lmda = lmd, shift= self.is_zeros[k], box_cox_biasadj=self.biasadj[k])
-      
+                if self.box_cox.get(k, False):
+                    forecasts[k] = back_box_cox_transform(
+                        y_pred=forecasts[k], lmda=lmd, shift=self.is_zeros[k], box_cox_biasadj=self.biasadj[k]
+                    )
+
         return forecasts
-        
-    def predict(self, X):
-        arr = np.array(X) 
-        return np.dot(self.coeffs.T, arr.T)
-        
 
-    def fit(self, df_train):
-        if self.cat_variables is not None:
-            self.cat_var = {c: sorted(df_train[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-            self.drop_categ= [sorted(df_train[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-            
-        df = self.data_prep(df_train)
-        self.X = np.array(df.drop(columns = self.target_cols))
-        if self.cons == True:
-            self.X = sm.add_constant(self.X)
-        self.y = np.array(df[self.target_cols])
-        self.coeffs = np.linalg.lstsq(self.X, self.y, rcond=None)[0]
+    def cv_var(
+        self,
+        df: pd.DataFrame,
+        target_col: str,
+        cv_split: int,
+        test_size: int,
+        metrics: List[Callable]
+    ) -> pd.DataFrame:
+        """
+        Perform cross-validation for VAR model.
 
-    def cv_var(self, df, target_col, cv_split, test_size, metrics):
-    
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input dataframe.
+        target_col : str
+            Target variable for evaluation.
+        cv_split : int
+            Number of cross-validation folds.
+        test_size : int
+            Test size per fold.
+        metrics : List[Callable]
+            List of metric functions.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with averaged cross-validation metric scores.
+        """
         tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
         self.metrics_dict = {m.__name__: [] for m in metrics}
-        # self.cv_impotance = pd.DataFrame()
-        self.cv_forecats_df= pd.DataFrame()
+        self.cv_forecasts_df = pd.DataFrame()
 
         for i, (train_index, test_index) in enumerate(tscv.split(df)):
             train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_cols), np.array(test[target_col])
-            
+            x_test, y_test = test.drop(columns=self.target_cols), np.array(test[target_col])
             self.fit(train)
-            
             bb_forecast = self.forecast(H=test_size, exog=x_test)[target_col]
 
-            forecat_df = test[target_col].to_frame()
-            forecat_df["forecasts"] = bb_forecast
-            self.cv_forecats_df = pd.concat([self.cv_forecats_df, forecat_df], axis=0)
+            forecast_df = test[target_col].to_frame()
+            forecast_df["forecasts"] = bb_forecast
+            self.cv_forecasts_df = pd.concat([self.cv_forecasts_df, forecast_df], axis=0)
 
             for m in metrics:
-                if m.__name__== 'mean_squared_error':
-                    eval = m(y_test, bb_forecast, squared=False)
-                elif (m.__name__== 'MeanAbsoluteScaledError')|(m.__name__== 'MedianAbsoluteScaledError'):
-                    eval = m(y_test, bb_forecast, np.array(train[self.target_col]))
+                if m.__name__ == 'mean_squared_error':
+                    eval_score = m(y_test, bb_forecast, squared=False)
+                elif m.__name__ in ['MeanAbsoluteScaledError', 'MedianAbsoluteScaledError']:
+                    eval_score = m(y_test, bb_forecast, np.array(train[self.target_cols]))
                 else:
-                    eval = m(y_test, bb_forecast)
-                self.metrics_dict[m.__name__].append(eval)
+                    eval_score = m(y_test, bb_forecast)
+                self.metrics_dict[m.__name__].append(eval_score)
 
-            # cv_tr_df = pd.DataFrame({"features":self.model_fit.feature_names_in_, "coefs":self.model_fit.coef_}).sort_values(by = "coefs", ascending = False)
-            # cv_tr_df["fold"] = i
-            # self.cv_impotance = pd.concat([self.cv_impotance, cv_tr_df], axis=0)
-
-        overal_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]  
-        
-        return pd.DataFrame(overal_perform).rename(columns = {0:"eval_metric", 1:"score"})
-
-
-def cv_tune_var(model, df, target_col, cv_split, test_size, param_space,eval_metric, opt_horizon = None,
-                eval_num = 100, verbose= False):
-
-    tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+        overall_perform = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]
+        return pd.DataFrame(overall_perform, columns=["eval_metric", "score"])
     
-    def check_pattern(pattern, param):
-        return any(pattern in text for text in param)
     
-    def objective(params):
-        
-        if check_pattern("lag_dict", params)|check_pattern("diff_dict", params)|check_pattern("box_cox", params):
-            if check_pattern("lag_dict", params):
-                model.lag_dict = {}
-                for i, j in enumerate(model.target_cols):
-                    lag_str = j+str(i)
-                    if type(params[lag_str]) is tuple:
-                        model.lag_dict[j] = list(params[lag_str])
-                    else:
-                        model.lag_dict[j] = range(1, params[lag_str]+1)
-                
-            if check_pattern("diff_dict", params):
-                model.diffs = {}
-                for i, j in enumerate(model.target_cols):
-                    diff_str = j+str(i)
-                    model.diffs[j] = params[diff_str]
-            
-            if check_pattern("box_cox_lmda", params):
-                model.lamdas = {}
-                for i, j in enumerate(model.target_cols):
-                    lamd_str = "box_cox_lmda"+str(i)
-                    model.lamdas[j] = params[lamd_str]
-
-            if check_pattern("box_cox_biasadj", params):
-                model.box_cox_biasadj = {}
-                for i, j in enumerate(model.target_cols):
-                    bias_str = "box_cox_biasadj"+str(i)
-                    model.box_cox_biasadj[j] = params[bias_str]
-
-        metric = []
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.iloc[:, 2:], np.array(test[target_col])
-
-            # if model.model.__name__ != 'LinearRegression':
-            #     model.fit(train, model_params)
-            # else:
-            model.fit(train)
-            yhat = model.forecast(H =len(y_test), exog=x_test)[target_col]
-            if eval_metric.__name__== 'mean_squared_error':
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], squared=False)
-                else:
-                    accuracy = eval_metric(y_test, yhat, squared=False)
-
-            elif (eval_metric.__name__== 'MeanAbsoluteScaledError')|(eval_metric.__name__== 'MedianAbsoluteScaledError'):
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:], np.array(train[self.target_col]))
-                else:
-                    accuracy = eval_metric(y_test, yhat, np.array(train[self.target_col]))
-            else:
-                if opt_horizon is not None:
-                    accuracy = eval_metric(y_test[-opt_horizon:], yhat[-opt_horizon:])
-                else:
-                    accuracy = eval_metric(y_test, yhat)
-            metric.append(accuracy)
-        score = np.mean(metric)
-
-        if verbose ==True:
-            print ("SCORE:", score)
-        return {'loss':score, 'status':STATUS_OK}
-        
-    trials = Trials()
-
-    best_hyperparams = fmin(fn = objective,
-                    space = param_space,
-                    algo = tpe.suggest,
-                    max_evals = eval_num,
-                    trials = trials)
-    model.tuned_params = [space_eval(param_space, {k: v[0] for k, v in t['misc']['vals'].items()}) 
-                for t in trials.trials]
-    
-    return space_eval(param_space, best_hyperparams)
-
-def kfold_target_encoder(df, feature_col, target_col, n_splits=5):
-    # Create a copy of the dataframe
-    df_encoded = df.copy()
-    
-    # Initialize KFold
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    
-    # Create a new column for the encoded values
-    encoded_col_name = f"{feature_col}_target_encoded"
-    df_encoded[encoded_col_name] = np.nan
-    feat_idx = df_encoded.columns.get_loc(feature_col)
-    encode_idx = df_encoded.columns.get_loc(encoded_col_name)
-    
-    # Perform K-fold target encoding
-    for train_idx, val_idx in kf.split(df):
-        # Calculate target mean for each category in training data
-        target_means = df.iloc[train_idx].groupby(feature_col)[target_col].mean()
-        
-        # Apply target means to validation fold
-        df_encoded.iloc[val_idx, encode_idx] = df_encoded.iloc[val_idx, feat_idx].map(target_means)
-    
-    # Handle any missing values (for categories not seen in training)
-    overall_mean = df[target_col].mean()
-    df_encoded[encoded_col_name].fillna(overall_mean, inplace=True)
-    
-    return df_encoded[encoded_col_name].values
-
-def target_encoder_for_test(train_df, test_df, feature_col):
-    # Calculate target mean for each category in the entire training data
-    encoded_col_name = f"{feature_col}_target_encoded"
-    
-    target_means = train_df.groupby(feature_col)[encoded_col_name].mean()
-    
-    # Calculate overall mean (for handling unseen categories)
-    overall_mean = train_df[encoded_col_name].mean()
-    
-    # Create a copy of the test dataframe
-    test_encoded = test_df.copy()
-    
-    # Create a new column for the encoded values
-    
-    # Apply target means to test data
-    test_encoded[encoded_col_name] = test_df[feature_col].map(target_means)
-    
-    # Handle any missing values (for categories not seen in training)
-    test_encoded[encoded_col_name].fillna(overall_mean, inplace=True)
-    
-    return test_encoded[encoded_col_name].values
