@@ -1,0 +1,40 @@
+Metadata-Version: 2.4
+Name: ARBB
+Version: 0.0.1
+Summary: Auto regressive bagging and boosting package
+Home-page: https://github.com/mustafaslanCoto/ARML
+Author: Mustafa Aslan
+Author-email: <mustafaslan63@email.com>
+Keywords: python,first package
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Data Scientists
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: Microsoft :: Windows
+Requires-Dist: xgboost
+Requires-Dist: lightgbm
+Requires-Dist: catboost
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: scikit-learn
+Requires-Dist: datetime
+Requires-Dist: hyperopt
+Requires-Dist: statsmodels
+Requires-Dist: seaborn
+Requires-Dist: statsforecast
+Requires-Dist: matplotlib
+Requires-Dist: window_ops
+Requires-Dist: cubist
+Requires-Dist: scipy
+Requires-Dist: numba
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: requires-dist
+Dynamic: summary
+
+Forecating using historical data as predictors

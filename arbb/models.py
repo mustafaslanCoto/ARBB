@@ -7,7 +7,7 @@ This module contains various forecasting classes (using CatBoost, LightGBM, XGBo
 RandomForest, etc.) and utility functions for cross-validation and hyperparameter
 tuning for time-series forecasting.
 """
-
+from typing import List, Dict, Optional, Callable, Tuple, Any, Union
 from tabnanny import verbose
 import numpy as np
 import pandas as pd
@@ -1289,16 +1289,14 @@ class VARModel:
         dfc = df.copy()
         # Handle categorical variables
         if self.cat_variables is not None:
-            # self.cat_var = {c: sorted(dfc[c].drop_duplicates().tolist()) for c in self.cat_variables}
-            # self.drop_categ = [self.cat_var[c][0] for c in self.cat_variables]
             for col, cats in self.cat_var.items():
                 dfc[col] = pd.Categorical(dfc[col], categories=cats)
-            dfc = pd.get_dummies(dfc)
+            dfc = pd.get_dummies(dfc, dtype=float)
             for i in self.drop_categ:
                 dfc.drop(list(dfc.filter(regex=i)), axis=1, inplace=True)
         
         # Check all target columns exist
-        if not all(col in dfc.columns for col in self.target_cols):
+        if all(col in dfc.columns for col in self.target_cols):
 
             # Box-Cox transformation
             if self.box_cox is not None:
@@ -1380,6 +1378,7 @@ class VARModel:
         X = df.drop(columns=self.target_cols)
         if self.cons:
             X = sm.add_constant(X)
+        X = X.apply(pd.to_numeric, errors='raise')
         self.X = np.array(X)
         self.y = np.array(df[self.target_cols])
         self.coeffs = np.linalg.lstsq(self.X, self.y, rcond=None)[0]
@@ -1399,6 +1398,7 @@ class VARModel:
             Model predictions for each target.
         """
         arr = np.array(X)
+        print(f"Input shape: {arr.shape}")
         return np.dot(self.coeffs.T, arr.T)
 
     def forecast(self, H: int, exog: Optional[pd.DataFrame] = None) -> Dict[str, np.ndarray]:
@@ -1446,12 +1446,13 @@ class VARModel:
 
             # Lagged features
             lags = []
-            if self.lag_dict is not None:
-                for tr, v in y_lists.items():
-                    if self.lag_dict[tr]:
-                        ys = [v[-x] for x in self.lag_dict[tr]]
+            if self.lags is not None:
+                for tr, vals in y_lists.items():
+                    if tr in self.lags:
+                        lag_used = self.lags[tr] if isinstance(self.lags[tr], list) else range(1, self.lags[tr] + 1)
+                        ys = [vals[-x] for x in lag_used]
                         lags += ys
-
+            print(f"Number of lagged features: {len(lags)}")
             # Lag transforms
             transform_lag = []
             if self.lag_transform is not None:
