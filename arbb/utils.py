@@ -1354,6 +1354,152 @@ def tune_model_bi2(df, forecast_col, cv_split, test_size, param_space, eval_metr
     return space_eval(param_space, best_hyperparams)
 
 
+def cv_tune_bidirectional(
+    model,
+    df,
+    forecast_col,
+    cv_split,
+    test_size,
+    param_space,
+    eval_metric,
+    step_size=None,
+    opt_horizon=None,
+    eval_num=100,
+    verbose=False,
+):
+    """
+    Tune forecasting model hyperparameters using cross-validation and Bayesian optimization.
+
+    Args:
+        model: Forecasting model object with .fit and .forecast methods and relevant attributes.
+        df (pd.DataFrame): Time series dataframe.
+        forecast_col (str): Name of the target variable to test.
+        cv_split (int): Number of time series splits.
+        test_size (int): Size of test window for each split.
+        step_size (int): Step size for moving the window. Defaults to None (equal to test_size).
+        param_space (dict): Hyperopt parameter search space. param_space for lags, differencing, etc. can be {'n_lag': (hp.choice('lag_y1', [1,2,3]), hp.choice('lag_y2', [1,2]))}
+        eval_metric (callable): Evaluation metric function.
+        opt_horizon (int, optional): Evaluate only on last N points of each split. Defaults to None (all points).
+        eval_num (int, optional): Number of hyperopt evaluations. Defaults to 100.
+        verbose (bool, optional): Print progress. Defaults to False.
+
+    Returns:
+        dict: Best hyperparameter values found.
+    """
+
+    target_cols = model.target_cols
+    tscv = ParametricTimeSeriesSplit(n_splits=cv_split, test_size=test_size, step_size=step_size)
+
+    def _set_model_params(params):
+        # Handle special model parameters that are not passed to model constructor
+        # and must be set directly on the forecasting model object
+        if "n_lag" in params:
+            if isinstance(params["n_lag"], (tuple, list)):
+                for idx, target_col in enumerate(target_cols):
+                    model.n_lag[target_col] = params["n_lag"][idx]
+        # for target_col in target_cols:
+        #         model.difference[target_col] = params["difference"]
+    
+        if "box_cox" in params:
+            if isinstance(params["box_cox"], (tuple, list)):
+                for idx, target_col in enumerate(target_cols):
+                    model.box_cox[target_col] = params["box_cox"][idx]
+        if "box_cox_lmda" in params:
+            if isinstance(params["box_cox_lmda"], (tuple, list)):
+                for idx, target_col in enumerate(target_cols):
+                    model.lmda[target_col] = params["box_cox_lmda"][idx]
+        if "box_cox_biasadj" in params:
+            if isinstance(params["box_cox_biasadj"], (tuple, list)):
+                for idx, target_col in enumerate(target_cols):
+                    model.biasadj[target_col] = params["box_cox_biasadj"][idx]
+        # if "trend" in params:
+        #     for target_col in target_cols:
+        #         model.trend[target_col] = params["trend"]
+
+        # Handle ETS trend settings
+        # ets_params (dict, optional): Dictionary of ETS model parameters (values are tuples of dictionaries of params) and fit settings for each target variable. Example: {'Target1': ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}), 'Target2': ({'trend': 'mul', 'seasonal': 'mul'}, {'damped_trend': False})}.
+        if model.trend is not None:
+            for target_col in target_cols:
+                if model.trend[target_col] and model.trend_type[target_col] in ("ses", "feature_ses"):
+                    model.ets_params[target_col] = {target_col: [{k: params[k] for k in ["trend", "damped_trend", "seasonal", "seasonal_periods"] if k in params}] for target_col in target_cols} # Set trend and seasonal parameters for each target column
+                    model.ets_fit = {}
+                    for k in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
+                        if k in params:
+                            # Only set "damping_trend" if "damped_trend" is True
+                            if (k == "damping_trend") and ("damped_trend" in params and not params["damped_trend"]):
+                                continue
+                        model.ets_fit[k] = params[k]
+                    # append model.ets_fit to model.ets_params[target_col]
+                    model.ets_params[target_col].append(model.ets_fit)
+
+    def _get_model_params_for_fit(params):
+        # Exclude special parameters that should not be passed to the model constructor
+        skip_keys = {
+            "box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj",
+            "trend", "damped_trend", "seasonal", "seasonal_periods",
+            "smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend",
+            "difference"
+        }
+        return {k: v for k, v in params.items() if k not in skip_keys}
+
+    def objective(params):
+        _set_model_params(params)
+        model_params = _get_model_params_for_fit(params) if getattr(model, "model", None) and model.model.__name__ != "LinearRegression" else None
+
+        metrics = []
+        for train_index, test_index in tscv.split(df):
+            train, test = df.iloc[train_index], df.iloc[test_index]
+            x_test = test.drop(columns=[target_cols])
+            y_test = np.array(test[forecast_col])
+
+            if model_params is not None:
+                model.fit(train, model_params)
+            else:
+                model.fit(train)
+            y_pred = model.forecast(n_ahead=len(y_test), x_test=x_test)[forecast_col]
+
+            # Evaluate using the specified metric
+            if eval_metric.__name__ == "mean_squared_error":
+                score = eval_metric(
+                    y_test[-opt_horizon:] if opt_horizon else y_test,
+                    y_pred[-opt_horizon:] if opt_horizon else y_pred,
+                    squared=False,
+                )
+            elif eval_metric.__name__ in ("MeanAbsoluteScaledError", "MedianAbsoluteScaledError"):
+                score = eval_metric(
+                    y_test[-opt_horizon:] if opt_horizon else y_test,
+                    y_pred[-opt_horizon:] if opt_horizon else y_pred,
+                    np.array(train[model.target_col])
+                )
+            else:
+                score = eval_metric(
+                    y_test[-opt_horizon:] if opt_horizon else y_test,
+                    y_pred[-opt_horizon:] if opt_horizon else y_pred,
+                )
+            metrics.append(score)
+
+        mean_score = np.mean(metrics)
+        if verbose:
+            print("Score:", mean_score)
+        return {"loss": mean_score, "status": STATUS_OK}
+
+    trials = Trials()
+    best_hyperparams = fmin(
+        fn=objective,
+        space=param_space,
+        algo=tpe.suggest,
+        max_evals=eval_num,
+        trials=trials,
+    )
+
+    model.tuned_params = [
+        space_eval(param_space, {k: v[0] for k, v in t["misc"]["vals"].items()})
+        for t in trials.trials
+    ]
+
+    return space_eval(param_space, best_hyperparams)
+
+
 
 def prob_param_forecasts(model, H, train_df, test_df=None):
     prob_forecasts = []

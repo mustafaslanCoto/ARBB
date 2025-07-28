@@ -554,7 +554,7 @@ class ml_bidirect_forecaster:
          seasonal_length (dict, optional): Seasonal differencing period. Example: {'target1': 7, 'target2': 7}.
          trend (dict, optional): Flag indicating if trend handling is applied. Default is False. Example: {'Target1': True, 'Target2': False}.
          trend_type (dict, optional): Trend handling strategy; one of 'linear', 'feature_lr', 'ses', or 'feature_ses'. Example: {'Target1': 'linear', 'Target2': 'feature_lr'}.
-         ets_params (dict, optional): Dictionary of ETS model parameters (values are tuples of dictionaries of params) and fit settings for each target variable. Example: {'Target1': ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}), 'Target2': ({'trend': 'mul', 'seasonal': 'mul'}, {'damped_trend': False})}.
+         ets_params (dict, optional): Dictionary of ETS model parameters (values are lists of dictionaries of params) and fit settings for each target variable. Example: {'Target1': [{'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}], 'Target2': [{'trend': 'mul', 'seasonal': 'mul'}, {'damped_trend': False}]}.
          target_encode (dict, optional): Flag determining if target encoding is used for categorical features for each target variable. Default is False. Example: {'Target1': True, 'Target2': False}.
          box_cox (dict, optional): Whether to apply a Box–Cox transformation for each target variable. Default is False. Example: {'Target1': True, 'Target2': False}.
          box_cox_lmda (dict, optional): Lambda parameter for the Box–Cox transformation for each target variable. Example: {'Target1': 0.5, 'Target2': 0.5}.
@@ -574,11 +574,12 @@ class ml_bidirect_forecaster:
         self.season_diff = seasonal_length
         self.trend = trend
         self.trend_type = trend_type
-        if ets_params is not None:
-            self.ets_model1 = ets_params[target_cols[0]][0]
-            self.ets_fit1 = ets_params[target_cols[0]][1]
-            self.ets_model2 = ets_params[target_cols[1]][0]
-            self.ets_fit2 = ets_params[target_cols[1]][1]
+        # if ets_params is not None:
+        #     self.ets_model1 = ets_params[target_cols[0]][0]
+        #     self.ets_fit1 = ets_params[target_cols[0]][1]
+        #     self.ets_model2 = ets_params[target_cols[1]][0]
+        #     self.ets_fit2 = ets_params[target_cols[1]][1]
+        self.ets_params = ets_params
         self.target_encode = target_encode
         self.box_cox = box_cox
         self.lmda = box_cox_lmda
@@ -620,7 +621,7 @@ class ml_bidirect_forecaster:
                         if self.trend_type[0] in ["linear", "feature_lr"]:
                             dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.lr_model1.predict(np.arange(self.len).reshape(-1, 1))
                         if self.trend_type[0] in ["ses", "feature_ses"]:
-                            self.ses_model1 = ExponentialSmoothing(dfc[self.target_cols[0]], **self.ets_model1).fit(**self.ets_fit1)
+                            self.ses_model1 = ExponentialSmoothing(dfc[self.target_cols[0]], **ets_params[target_cols[0]][0]).fit(**ets_params[target_cols[0]][1])
                             dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.ses_model1.fittedvalues.values
 
                     if self.trend[1]:
@@ -630,7 +631,7 @@ class ml_bidirect_forecaster:
                             dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.lr_model2.predict(np.arange(self.len).reshape(-1, 1))
 
                         if self.trend_type[1] in ["ses", "feature_ses"]:
-                            self.ses_model2 = ExponentialSmoothing(dfc[self.target_cols[1]], **self.ets_model2).fit(**self.ets_fit2)
+                            self.ses_model2 = ExponentialSmoothing(dfc[self.target_cols[1]], **ets_params[target_cols[1]][0]).fit(**ets_params[target_cols[1]][1])
                             dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.ses_model2.fittedvalues.values
                 # Handle differencing if specified
                 if self.difference is not None:
@@ -821,8 +822,12 @@ class ml_bidirect_forecaster:
                                                             lmda=self.lamda2,
                                                             shift=self.is_zero2,
                                                             box_cox_biasadj=self.biasadj[self.target_cols[1]])
-                return forecasts1, forecasts2
-            
+                forecasts = {
+                    self.target_cols[0]: forecasts1,
+                    self.target_cols[1]: forecasts2
+                }
+                return forecasts
+
             def cv(self, df, cv_split, test_size, metrics, params=None):
                 """"
                 cross-validate the bidirectional CatBoost model with time series split.
@@ -914,7 +919,7 @@ class ml_bidirect_forecaster:
                         if self.trend_type[0] in ["linear", "feature_lr"]:
                             dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.lr_model1.predict(np.arange(self.len).reshape(-1, 1))
                         if self.trend_type[0] in ["ses", "feature_ses"]:
-                            self.ses_model1 = ExponentialSmoothing(dfc[self.target_cols[0]], **self.ets_model1).fit(**self.ets_fit1)
+                            self.ses_model1 = ExponentialSmoothing(dfc[self.target_cols[0]], **self.ets_params[self.target_cols[0]][0]).fit(**self.ets_params[self.target_cols[0]][1])
                             dfc[self.target_cols[0]] = dfc[self.target_cols[0]] - self.ses_model1.fittedvalues.values
 
                     if self.trend[1]:
@@ -924,7 +929,7 @@ class ml_bidirect_forecaster:
                             dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.lr_model2.predict(np.arange(self.len).reshape(-1, 1))
 
                         if self.trend_type[1] in ["ses", "feature_ses"]:
-                            self.ses_model2 = ExponentialSmoothing(dfc[self.target_cols[1]], **self.ets_model2).fit(**self.ets_fit2)
+                            self.ses_model2 = ExponentialSmoothing(dfc[self.target_cols[1]], **self.ets_params[self.target_cols[1]][0]).fit(**self.ets_params[self.target_cols[1]][1])
                             dfc[self.target_cols[1]] = dfc[self.target_cols[1]] - self.ses_model2.fittedvalues.values
                 # Handle differencing if specified
                 if self.difference is not None:
@@ -1079,12 +1084,12 @@ class ml_bidirect_forecaster:
                             if target not in self.target_cols:
                                 raise ValueError(f"Target column {target} not found in the dataframe.")
                             for func in funcs:
-                                series_array = np.array(pd.Series(target1_lags if target == self.target_cols[0] else target2_lags).shift(funcs[0]))
+                                series_array = np.array(pd.Series(target1_lags if target == self.target_cols[0] else target2_lags).shift(funcs[0])) # func[0] is the shift value
                                 if not isinstance(func, tuple):
                                     if func[1].__name__ == "rolling_quantile":
-                                        t1 = func[1](series_array, funcs[2], funcs[3])[-1]
+                                        t1 = func[1](series_array, funcs[2], funcs[3])[-1] # The first element of tuple is shift value, the second element of the tuple is a function, the third is the window, the fourth is the quantile. EX: (1, rolling_quantile, 30, 0.5) will create a feature with rolling quantile of the target variable shifted by 1.
                                     else:
-                                        t1 = func[1](series_array, funcs[2])[-1]
+                                        t1 = func[1](series_array, funcs[2])[-1] # The first element of the tuple is shift value, the second element of the tuple is a function, the second is the window. EX: (1, rolling_mean, 30) or (2, rolling_std, 30) will create a feature with rolling mean of the target variable shifted by 1.
                                 transform_lag.append(t1)
                     else:
                         transform_lag = []
@@ -1125,8 +1130,12 @@ class ml_bidirect_forecaster:
                                                             lmda=self.lamda2,
                                                             shift=self.is_zero2,
                                                             box_cox_biasadj=self.biasadj[self.target_cols[1]])
-                return forecasts1, forecasts2
-            
+                forecasts = {
+                    self.target_cols[0]: forecasts1,
+                    self.target_cols[1]: forecasts2
+                }
+                return forecasts
+
             def cv(self, df, cv_split, test_size, metrics, params=None):
                 """"
                 cross-validate the bidirectional XGBoost model with time series split.
@@ -1398,7 +1407,6 @@ class VARModel:
             Model predictions for each target.
         """
         arr = np.array(X)
-        print(f"Input shape: {arr.shape}")
         return np.dot(self.coeffs.T, arr.T)
 
     def forecast(self, H: int, exog: Optional[pd.DataFrame] = None) -> Dict[str, np.ndarray]:
@@ -1452,7 +1460,6 @@ class VARModel:
                         lag_used = self.lags[tr] if isinstance(self.lags[tr], list) else range(1, self.lags[tr] + 1)
                         ys = [vals[-x] for x in lag_used]
                         lags += ys
-            print(f"Number of lagged features: {len(lags)}")
             # Lag transforms
             transform_lag = []
             if self.lag_transform is not None:
