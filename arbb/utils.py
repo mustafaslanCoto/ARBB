@@ -91,82 +91,131 @@ def fourier_terms(start, stop, period, num_terms, df_index):
         df["cos_"+str(i-1)+"_"+str(period)] = np.cos(2 * np.pi * i * t / period)
     return df
 
-@jit(nopython=True)
-def rolling_median(arr, window):
+# @jit(nopython=True)
+# Your transformation classes
+class rolling_mean:
     """
-    Calculate the rolling median of an array.
-    
-    Parameters:
-    arr (array-like): Input array
-    window (int): Size of the rolling window
-    
-    Returns:
-    numpy.ndarray: Array of rolling medians, same length as input array
+    A class to compute rolling mean with a specified window size and minimum samples.
+    Args:
+        shift (int): The number of periods to shift time series data.
+        window_size (int): The size of the rolling window.
+        min_samples (int): Minimum number of samples required to compute the mean.
     """
-    # Convert input to numpy array if it's not already
-    arr = np.asarray(arr)
-    
-    # Create output array filled with NaN
-    result = np.full(arr.shape, np.nan)
-    
-    # Calculate rolling median
-    for i in range(window - 1, len(arr)):
-        result[i] = np.median(arr[i - window + 1 : i + 1])
-    
-    return result
-    
-# def rolling_quantile(arr, window, q):
-#     """
-#     Calculate the rolling quantile of an array.
-    
-#     Parameters:
-#     arr (array-like): Input array
-#     q (float): Quantile, which must be between 
-#     0 and 1 inclusive
-#     window (int): Size of the rolling window
-    
-#     Returns:
-#     numpy.ndarray: Array of rolling quantiles, same length as input array
-#     """
-#     # Convert input to numpy array if it's not already
-#     arr = np.asarray(arr)
-    
-#     # Create output array filled with NaN
-#     result = np.full(arr.shape, np.nan)
-    
-#     # Calculate rolling quantile
-#     for i in range(window - 1, len(arr)):
-#         result[i] = np.quantile(arr[i - window + 1 : i + 1], q, method="lower")
-#         # result[i] = stats.mstats.mquantiles(arr[i - window + 1 : i + 1], prob=q, alphap=0.5, betap=0.5)[0]
-    
-#     return result
 
-@jit(nopython=True)
-def rolling_quantile(arr, window, q):
-    """
-    Calculate the rolling quantile of an array.
-    
-    Parameters:
-    arr (array-like): Input array
-    q (float): Quantile, which must be between 0 and 1 inclusive
-    window (int): Size of the rolling window
-    
-    Returns:
-    numpy.ndarray: Array of rolling quantiles, same length as input array
-    """
-    
-    result = np.full(arr.shape, np.nan)
-    
-    for i in range(window - 1, len(arr)):
-        x = arr[i - window + 1 : i + 1]
-        n = len(x)
-        y = np.sort(x)
-        result[i] = (y[int(q * (n - 1))] + y[int(np.ceil(q * (n - 1)))]) * 0.5
-    
-    return result
+    def __init__(self, window_size, shift=1, min_samples=1):
+        self.shift = shift
+        self.window_size = window_size
+        self.min_samples = min_samples
 
-def target_power(series, p):
-    return np.array(series)**p
+    def __call__(self, data, is_forecast=False):
+        """
+        Compute the rolling mean of the data with the specified parameters.
+        Args:
+            data (pd.Series or np.ndarray): The input data to compute the rolling mean.
+            is_forecast (bool): If True, adjust the shift for forecasting purposes.
+        Returns:
+            pd.Series: The rolling mean of the input data.
+        """
+
+        if is_forecast:
+            # For example, if it's a forecast, for the forecasting next value, we might want to shift by one less than usual to align with the forecasted period
+            return pd.Series(data).shift(self.shift-1).rolling(self.window_size, min_periods=self.min_samples).mean()
+        # If not a forecast, apply the usual shift
+        else:
+            # If not a forecast, apply the usual shift
+            return pd.Series(data).shift(self.shift).rolling(self.window_size, min_periods=self.min_samples).mean()
+
+class rolling_quantile:
+    """
+    A class to compute rolling quantile with a specified window size and minimum samples.
+    Args:
+        shift (int): The number of periods to shift time series data.
+        window_size (int): The size of the rolling window.
+        min_samples (int): Minimum number of samples required to compute the quantile.
+    """
+
+    def __init__(self, window_size, quantile, shift=1, min_samples=3):
+        self.shift = shift
+        self.window_size = window_size
+        self.quantile = quantile
+        self.min_samples = min_samples
+
+    def __call__(self, data, is_forecast=False):
+        # Return the rolling quantile with the specified window size and minimum samples
+        if is_forecast:
+            return pd.Series(data).shift(self.shift-1).rolling(self.window_size, min_periods=self.min_samples).quantile(self.quantile)
+        # If not a forecast, apply the usual shift
+        else:
+            # If not a forecast, apply the usual shift
+            return pd.Series(data).shift(self.shift).rolling(self.window_size, min_periods=self.min_samples).quantile(self.quantile)
+    
+class rolling_std:
+    """
+    A class to compute rolling std with a specified window size and minimum samples.
+    Args:
+        shift (int): The number of periods to shift time series data.
+        window_size (int): The size of the rolling window.
+        min_samples (int): Minimum number of samples required to compute the std.
+    """
+
+    def __init__(self, window_size, shift=1, min_samples=3):
+        self.shift = shift
+        self.window_size = window_size
+        self.min_samples = min_samples
+
+    def __call__(self, data, is_forecast=False):
+        # Return the rolling std with the specified window size and minimum samples
+        if is_forecast:
+            return pd.Series(data).shift(self.shift-1).rolling(self.window_size, min_periods=self.min_samples).std()
+        else:
+            return pd.Series(data).shift(self.shift).rolling(self.window_size, min_periods=self.min_samples).std()
+
+class expanding_std:
+    """
+    A class to compute expanding standard deviation.
+    Args:
+        shift (int): The number of periods to shift time series data.
+    """
+    def __init__(self, shift=1):
+        self.shift = shift
+    def __call__(self, data, is_forecast=False):
+        if is_forecast:
+            return pd.Series(data).shift(self.shift-1).expanding().std()
+        else:
+            return pd.Series(data).shift(self.shift).expanding().std()
+
+class expanding_mean:
+    """
+    A class to compute expanding mean.
+    Args:
+        shift (int): The number of periods to shift time series data.
+    """
+    def __init__(self, shift=1):
+        self.shift = shift
+    def __call__(self, data, is_forecast=False):
+        if is_forecast:
+            return pd.Series(data).shift(self.shift-1).expanding().mean()
+        else:
+            return pd.Series(data).shift(self.shift).expanding().mean()
+
+class expanding_quantile:
+    """
+    A class to compute expanding quantile.
+    Args:
+        quantile (float): The quantile to compute.
+    """
+    def __init__(self, shift=1, quantile=0.5):
+        self.shift = shift
+        self.quantile = quantile
+
+    def __call__(self, data, is_forecast=False):
+        """
+        Compute the expanding quantile.
+        """
+        if is_forecast:
+            return pd.Series(data).shift(self.shift-1).expanding().quantile(self.quantile)
+        else:
+            return pd.Series(data).shift(self.shift).expanding().quantile(self.quantile)
 
 #------------------------------------------------------------------------------
 # Lag Selection Algorithms
@@ -1057,6 +1106,93 @@ def tune_sarima(y, d, D, season,p_range, q_range, P_range, Q_range, X=None):
 # ML tuning utility function
 #------------------------------------------------------------------------------
 
+def cross_validate(self, model, df, cv_split, test_size, metrics):
+    """
+    Run cross-validation using time series splits.
+
+    Args:
+        model (class): Machine learning model class (e.g., CatBoostRegressor, LGBMRegressor).
+        df (pd.DataFrame): Input data.
+        cv_split (int): Number of splits in TimeSeriesSplit.
+        test_size (int): Size of test window.
+        metrics (list): List of metric functions.
+    
+    Returns:
+        pd.DataFrame: Performance metrics for CV.
+    """
+    tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+    self.metrics_dict = {m.__name__: [] for m in metrics}
+    for train_index, test_index in tscv.split(df):
+        train, test = df.iloc[train_index], df.iloc[test_index]
+        x_test = test.drop(columns=[model.target_col])
+        y_test = np.array(test[model.target_col])
+        model.fit(train)
+        bb_forecast = model.forecast(test_size, x_test=x_test)
+        # Evaluate each metric
+        for m in metrics:
+            if m.__name__ == 'mean_squared_error':
+                eval_val = m(y_test, bb_forecast, squared=False)
+            elif m.__name__ in ['MeanAbsoluteScaledError', 'MedianAbsoluteScaledError']:
+                eval_val = m(y_test, bb_forecast, np.array(train[self.target_col]))
+            else:
+                eval_val = m(y_test, bb_forecast)
+            self.metrics_dict[m.__name__].append(eval_val)
+    overall_performance = [[m.__name__, np.mean(self.metrics_dict[m.__name__])] for m in metrics]
+    return pd.DataFrame(overall_performance).rename(columns={0: "eval_metric", 1: "score"})
+
+
+def bidirectional_cross_validate(self, model, df, cv_split, test_size, metrics):
+    """
+    Cross-validate the bidirectional CatBoost model with time series split.
+    Args:
+        df (pd.DataFrame): Input dataframe.
+        cv_split (int): Number of folds.
+        test_size (int): Forecast window for each split.
+        metrics (list): List of evaluation metric functions.
+    Returns:
+        pd.DataFrame: CV performance metrics for each target variable.
+    """
+    tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
+    self.metrics_dict = {m.__name__: [] for m in metrics}
+    self.cv_fi = pd.DataFrame()
+    self.cv_forecasts_df = pd.DataFrame()
+    for i, (train_index, test_index) in enumerate(tscv.split(df)):
+        train, test = df.iloc[train_index], df.iloc[test_index]
+        x_test = test.drop(columns=model.target_cols)
+        y_test1 = np.array(test[model.target_cols[0]])
+        y_test2 = np.array(test[model.target_cols[1]])
+        
+        model.fit(train)
+
+        forecast_vals1, forecast_vals2 = model.forecast(test_size, x_test=x_test)
+        forecat_df = test[self.target_cols]
+        forecat_df["forecasts1"] = forecast_vals1
+        forecat_df["forecasts2"] = forecast_vals2
+        self.cv_forecasts_df = pd.concat([self.cv_forecasts_df, forecat_df], axis=0)
+        for m in metrics:
+            if m.__name__ == 'mean_squared_error':
+                val1 = m(y_test1, forecast_vals1, squared=False)
+                val2 = m(y_test2, forecast_vals2, squared=False)
+            elif m.__name__ in ['MeanAbsoluteScaledError', 'MedianAbsoluteScaledError']:
+                val1 = m(y_test1, forecast_vals1, np.array(train[self.target_cols[0]]))
+                val2 = m(y_test2, forecast_vals2, np.array(train[self.target_cols[1]]))
+            else:
+                val1 = m(y_test1, forecast_vals1)
+                val2 = m(y_test2, forecast_vals2)
+            self.metrics_dict[m.__name__].append([val1, val2])
+        cv_tr_df1 = pd.DataFrame({"feat_name": self.model1_fit.feature_names_in_,
+                                "importance": self.model1_fit.feature_importances_}).sort_values(by="importance", ascending=False)
+        cv_tr_df1["target"] = self.target_cols[0]
+        cv_tr_df1["fold"] = i
+        cv_tr_df2 = pd.DataFrame({"feat_name": self.model2_fit.feature_names_in_,
+                                "importance": self.model2_fit.feature_importances_}).sort_values(by="importance", ascending=False)
+        cv_tr_df2["target"] = self.target_cols[1]
+        cv_tr_df2["fold"] = i
+        self.cv_fi = pd.concat([self.cv_fi, cv_tr_df1, cv_tr_df2], axis=0)
+    overall = [[m.__name__, np.mean([v[0] for v in self.metrics_dict[m.__name__]])] for m in metrics]
+    # pd.DataFrame(overall).rename(columns={0: "eval_metric", 1: "score1", 2: "score2"})
+    return pd.DataFrame(overall).rename(columns={0: "eval_metric", 1: f"score_{self.target_cols[0]}", 2: f"score_{self.target_cols[1]}"})
+
 def cv_tune(
     model,
     df,
@@ -1137,7 +1273,8 @@ def cv_tune(
             y_test = np.array(test[model.target_col])
 
             if model_params is not None:
-                model.fit(train, model_params)
+                model.model.set_params(**model_params)
+                model.fit(train)
             else:
                 model.fit(train)
             y_pred = model.forecast(n_ahead=len(y_test), x_test=x_test)
@@ -1377,7 +1514,7 @@ def cv_tune_bidirectional(
         cv_split (int): Number of time series splits.
         test_size (int): Size of test window for each split.
         step_size (int): Step size for moving the window. Defaults to None (equal to test_size).
-        param_space (dict): Hyperopt parameter search space. param_space for lags, differencing, etc. can be {'n_lag': (hp.choice('lag_y1', [1,2,3]), hp.choice('lag_y2', [1,2]))}
+        param_space (dict): Hyperopt parameter search space. params for lags, differencing, etc. can be {'n_lag': (hp.choice('lag_y1', [1,2,3]), hp.choice('lag_y2', [1,2]))}
         eval_metric (callable): Evaluation metric function.
         opt_horizon (int, optional): Evaluate only on last N points of each split. Defaults to None (all points).
         eval_num (int, optional): Number of hyperopt evaluations. Defaults to 100.
@@ -1397,9 +1534,12 @@ def cv_tune_bidirectional(
             if isinstance(params["n_lag"], (tuple, list)):
                 for idx, target_col in enumerate(target_cols):
                     model.n_lag[target_col] = params["n_lag"][idx]
-        # for target_col in target_cols:
-        #         model.difference[target_col] = params["difference"]
-    
+        if "difference" in params:
+            if isinstance(params["difference"], (tuple, list)):
+                # If difference is a tuple or list, set it for each target column
+                for idx, target_col in enumerate(target_cols):
+                    model.difference[target_col] = params["difference"][idx]
+
         if "box_cox" in params:
             if isinstance(params["box_cox"], (tuple, list)):
                 for idx, target_col in enumerate(target_cols):
@@ -1419,16 +1559,16 @@ def cv_tune_bidirectional(
         # Handle ETS trend settings
         # ets_params (dict, optional): Dictionary of ETS model parameters (values are tuples of dictionaries of params) and fit settings for each target variable. Example: {'Target1': ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}), 'Target2': ({'trend': 'mul', 'seasonal': 'mul'}, {'damped_trend': False})}.
         if model.trend is not None:
-            for target_col in target_cols:
+            for idx, target_col in enumerate(target_cols):
                 if model.trend[target_col] and model.trend_type[target_col] in ("ses", "feature_ses"):
-                    model.ets_params[target_col] = {target_col: [{k: params[k] for k in ["trend", "damped_trend", "seasonal", "seasonal_periods"] if k in params}] for target_col in target_cols} # Set trend and seasonal parameters for each target column
+                    model.ets_params[target_col] = {target_col: [{k: params[k][idx] for k in ["trend", "damped_trend", "seasonal", "seasonal_periods"] if k in params}] for target_col in target_cols} # Set trend and seasonal parameters for each target column
                     model.ets_fit = {}
                     for k in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
                         if k in params:
                             # Only set "damping_trend" if "damped_trend" is True
                             if (k == "damping_trend") and ("damped_trend" in params and not params["damped_trend"]):
                                 continue
-                        model.ets_fit[k] = params[k]
+                        model.ets_fit[k] = params[k][idx]
                     # append model.ets_fit to model.ets_params[target_col]
                     model.ets_params[target_col].append(model.ets_fit)
 
@@ -1453,6 +1593,7 @@ def cv_tune_bidirectional(
             y_test = np.array(test[forecast_col])
 
             if model_params is not None:
+                model.model.set_params(**model_params)
                 model.fit(train, model_params)
             else:
                 model.fit(train)
