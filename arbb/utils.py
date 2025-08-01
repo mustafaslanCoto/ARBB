@@ -1,3 +1,4 @@
+from pyexpat import model
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -9,6 +10,8 @@ from numba import jit
 ##Stationarity Check
 from statsmodels.tsa.stattools import adfuller, kpss
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
+import warnings
+warnings.filterwarnings("ignore")
 
 #------------------------------------------------------------------------------
 # Unit Root Test and Serial Correlation Check
@@ -912,7 +915,7 @@ def target_encoder_for_test(train_df, test_df, feature_col):
 # Holt-Winters Exponential Smoothing Model Tuning
 #------------------------------------------------------------------------------
 
-def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, append_horizons = False, verbose = False):
+def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, step_size = None, verbose = False):
     """
     Tune ETS model hyperparameters using Hyperopt.
 
@@ -921,9 +924,9 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, appen
         param_space (dict): Hyperparameter search space.
         cv_splits (int): Number of cross-validation splits.
         horizon (int): Forecast horizon.
+        step_size (int): Step size for time series cross-validation.
         eval_metric (function): Evaluation metric function.
         eval_num (int): Number of evaluations for hyperparameter tuning.
-        append_horizons (bool): Whether to append horizons to the forecast.
         verbose (bool): Whether to print progress.
     Returns:
         tuple: Best model parameters and fit parameters.
@@ -933,7 +936,7 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, appen
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
     from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
     from hyperopt.pyll import scope
-    tscv = TimeSeriesSplit(n_splits=cv_splits, test_size=horizon)
+    tscv = ParametricTimeSeriesSplit(n_splits=cv_splits, test_size=horizon, step_size=step_size)
     # Define the objective function for hyperparameter tuning
     def objective(params):
         if (params["trend"] != None) & (params["seasonal"] != None): # Both trend and seasonal are specified
@@ -943,7 +946,7 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, appen
             trend_type = params['trend'] # Trend type
             season_type = params['seasonal'] # Seasonal type
             S = params['seasonal_periods'] # Seasonal periods
-            if params["damped_trend"] == True: # Damped trend
+            if params["damped_trend"]: # Damped trend
                 damped_bool = params["damped_trend"]
                 damp_trend = params['damping_trend']
             else:
@@ -992,11 +995,7 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, appen
                 damped_bool = params["damped_trend"]
                 damp_trend = None
             
-    
-    
-        if append_horizons is True:
-            actuals = []
-            forecasts = []
+
         metric = [] # List to store evaluation metrics
         # Perform time series cross-validation
         for train_index, test_index in tscv.split(data):
@@ -1009,23 +1008,9 @@ def tune_ets(data, param_space, cv_splits, horizon, eval_metric, eval_num, appen
             
             hw_forecast = hw_fit.forecast(len(test))
             forecast_filled = np.nan_to_num(hw_forecast, nan=0)
-            if append_horizons is True:
-                forecasts += list(forecast_filled)
-                actuals += list(test)
-            else:
-                if eval_metric.__name__== 'mase':
-                    accuracy = eval_metric(test, forecast_filled, np.array(train))
-                else:
-                    accuracy = eval_metric(test, forecast_filled)
-                metric.append(accuracy)
-        if append_horizons is True:
-            forecasts = np.array(forecasts)
-            actuals = np.array(actuals)
-            if eval_metric.__name__== 'mase':
-                accuracy = eval_metric(actuals, forecasts, np.array(train))
-            else:
-                accuracy = eval_metric(actuals, forecasts)
+            accuracy = eval_metric(test, forecast_filled)
             metric.append(accuracy)
+            
         score = np.mean(metric)
         if verbose ==True:
             print ("SCORE:", score)
@@ -1208,20 +1193,33 @@ def cv_tune(
     """
     Tune forecasting model hyperparameters using cross-validation and Bayesian optimization.
 
-    Args:
-        model: Forecasting model object with .fit and .forecast methods and relevant attributes.
-        df (pd.DataFrame): Time series dataframe.
-        cv_split (int): Number of time series splits.
-        test_size (int): Size of test window for each split.
-        step_size (int): Step size for moving the window. Defaults to None (equal to test_size).
-        param_space (dict): Hyperopt parameter search space.
-        eval_metric (callable): Evaluation metric function.
-        opt_horizon (int, optional): Evaluate only on last N points of each split. Defaults to None (all points).
-        eval_num (int, optional): Number of hyperopt evaluations. Defaults to 100.
-        verbose (bool, optional): Print progress. Defaults to False.
+    Parameters
+    ----------
+    model : object
+        Forecasting model object with .fit and .forecast methods and relevant attributes.
+    df : pd.DataFrame
+        Time series dataframe.
+    cv_split : int
+        Number of time series splits.
+    test_size : int
+        Size of test window for each split.
+    param_space : dict
+        Hyperopt parameter search space.
+    eval_metric : callable
+        Evaluation metric function.
+    step_size : int, optional
+        Step size for moving the window. Defaults to None (equal to test_size).
+    opt_horizon : int, optional
+        Evaluate only on last N points of each split. Defaults to None (all points).
+    eval_num : int, optional
+        Number of hyperopt evaluations. Defaults to 100.
+    verbose : bool, optional
+        Print progress. Defaults to False.
 
-    Returns:
-        dict: Best hyperparameter values found.
+    Returns
+    -------
+    dict
+        Best hyperparameter values found.
     """
     tscv = ParametricTimeSeriesSplit(n_splits=cv_split, test_size=test_size, step_size=step_size)
 
@@ -1229,28 +1227,34 @@ def cv_tune(
         # Handle special model parameters that are not passed to model constructor
         # and must be set directly on the forecasting model object
         if "n_lag" in params:
-            model.n_lag = list(params["n_lag"]) if isinstance(params["n_lag"], tuple) else range(1, params["n_lag"] + 1)
+            if isinstance(params["n_lag"], int):
+                model.n_lag = list(range(1, params["n_lag"] + 1))
+            elif isinstance(params["n_lag"], list):
+                model.n_lag = params["n_lag"]
+
         if "difference" in params:
             model.difference = params["difference"]
         if "box_cox" in params:
             model.box_cox = params["box_cox"]
         if "box_cox_lmda" in params:
-            model.lmda = params["box_cox_lmda"]
+            model.lamda = params["box_cox_lmda"]
         if "box_cox_biasadj" in params:
             model.biasadj = params["box_cox_biasadj"]
 
         # Handle ETS trend settings
-        if getattr(model, "trend_type", None) in ("ses", "feature_ses"):
-            model.ets_model = {
-                k: params[k] for k in ["trend", "damped_trend", "seasonal", "seasonal_periods"] if k in params
-            }
-            model.ets_fit = {}
-            for k in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
-                if k in params:
-                    # Only set "damping_trend" if "damped_trend" is True
-                    if k == "damping_trend" and "damped_trend" in params and not params["damped_trend"]:
-                        continue
-                    model.ets_fit[k] = params[k]
+        # if model.trend:
+        #     if model.trend_type in ["ses", "feature_ses"]:
+        #         model.ets_model = {
+        #             k: params[k] for k in ["trend", "damped_trend", "seasonal", "seasonal_periods"] if k in params
+        #         }
+        #         model.ets_fit = {}
+        #         for k in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
+        #             if k in params:
+        #                 # Only set "damping_trend" if "damped_trend" is True
+        #                 if (k == "damping_trend") and ("damped_trend" in params and not params["damped_trend"]):
+        #                     continue
+        #                 else:
+        #                     model.ets_fit[k] = params[k]
 
     def _get_model_params_for_fit(params):
         # Exclude special parameters that should not be passed to the model constructor
@@ -1264,7 +1268,12 @@ def cv_tune(
 
     def objective(params):
         _set_model_params(params)
-        model_params = _get_model_params_for_fit(params) if getattr(model, "model", None) and model.model.__name__ != "LinearRegression" else None
+        if isinstance(model.model, LinearRegression):
+            # For LinearRegression, we don't need to set model_params
+            model_params = None
+        else:
+            # For other models, get the parameters to set
+            model_params = _get_model_params_for_fit(params)
 
         metrics = []
         for train_index, test_index in tscv.split(df):
@@ -1274,26 +1283,25 @@ def cv_tune(
 
             if model_params is not None:
                 model.model.set_params(**model_params)
-                model.fit(train)
-            else:
-                model.fit(train)
+            model.fit(train)
+            
             y_pred = model.forecast(n_ahead=len(y_test), x_test=x_test)
 
             # Evaluate using the specified metric
-            if eval_metric.__name__ == "mean_squared_error":
-                score = eval_metric(
-                    y_test[-opt_horizon:] if opt_horizon else y_test,
-                    y_pred[-opt_horizon:] if opt_horizon else y_pred,
-                    squared=False,
-                )
-            elif eval_metric.__name__ in ("MeanAbsoluteScaledError", "MedianAbsoluteScaledError"):
-                score = eval_metric(
-                    y_test[-opt_horizon:] if opt_horizon else y_test,
-                    y_pred[-opt_horizon:] if opt_horizon else y_pred,
-                    np.array(train[model.target_col])
-                )
-            else:
-                score = eval_metric(
+            # if eval_metric.__name__ == "mean_squared_error":
+            #     score = eval_metric(
+            #         y_test[-opt_horizon:] if opt_horizon else y_test,
+            #         y_pred[-opt_horizon:] if opt_horizon else y_pred,
+            #         squared=False,
+            #     )
+            # elif eval_metric.__name__ in ("MeanAbsoluteScaledError", "MedianAbsoluteScaledError"):
+            #     score = eval_metric(
+            #         y_test[-opt_horizon:] if opt_horizon else y_test,
+            #         y_pred[-opt_horizon:] if opt_horizon else y_pred,
+            #         np.array(train[model.target_col])
+            #     )
+            # else:
+            score = eval_metric(
                     y_test[-opt_horizon:] if opt_horizon else y_test,
                     y_pred[-opt_horizon:] if opt_horizon else y_pred,
                 )
@@ -1391,106 +1399,6 @@ class ParametricTimeSeriesSplit:
             yield train_index, test_index
 
 
-def tune_model_bi1(self, df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
-    if self.cat_variables is not None:
-        self.cat_var = {c: sorted(df[c].drop_duplicates().tolist(), key=lambda x: x[0]) for c in self.cat_variables}
-        self.drop_categ= [sorted(df[i].drop_duplicates().tolist(), key=lambda x: x[0])[0] for i in self.cat_variables]
-    tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-    
-    def objective(params):
-        model1=self.model(**params)
-        model2 =self.model(**params)
-
-        metric = []
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-            model_train = self.data_prep(train)
-            
-            self.X, self.y1, self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-            self.model_ada1 = model1.fit(self.X, self.y1)
-            self.model_ada2 = model2.fit(self.X, self.y2)
-            yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-            
-            if eval_metric.__name__== 'mean_squared_error':
-                if forecast_col == self.target_col[0]:
-                    accuracy = eval_metric(y_test, yhat[0], squared=False)
-                else:
-                    accuracy = eval_metric(y_test, yhat[1], squared=False)
-                
-            else:
-                if forecast_col == self.target_col[0]:
-                    accuracy = eval_metric(y_test, yhat[0])
-                    
-                else:
-                    accuracy = eval_metric(y_test, yhat[1])
-#                 print(str(accuracy)+" and len is "+str(len(test)))
-            metric.append(accuracy)
-        score = np.mean(metric)
-
-        print ("SCORE:", score)
-        return {'loss':score, 'status':STATUS_OK}
-        
-    trials = Trials()
-
-    best_hyperparams = fmin(fn = objective,
-                    space = param_space,
-                    algo = tpe.suggest,
-                    max_evals = eval_num,
-                    trials = trials)
-    # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-    #                    else best_hyperparams[i] for i in best_hyperparams}
-    return space_eval(param_space, best_hyperparams)
-
-def tune_model_bi2(df, forecast_col, cv_split, test_size, param_space, eval_metric, eval_num = 100):
-    tscv = TimeSeriesSplit(n_splits=cv_split, test_size=test_size)
-    
-    def objective(params):
-        model1=self.model(**params, verbose=-1)
-        model2 =self.model(**params, verbose=-1)
-
-        metric = []
-        for train_index, test_index in tscv.split(df):
-            train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test, y_test = test.drop(columns = self.target_col), np.array(test[forecast_col])
-            model_train = self.data_prep(train)
-            
-            self.X, self.y1, self.y2 = model_train.drop(columns =self.target_col), model_train[self.target_col[0]], model_train[self.target_col[1]]
-            self.model_lgb1 = model1.fit(self.X, self.y1, categorical_feature=self.cat_var)
-            self.model_lgb2 = model2.fit(self.X, self.y2, categorical_feature=self.cat_var)
-            yhat = self.forecast(n_ahead =len(y_test), x_test=x_test)
-            
-            if eval_metric.__name__== 'mean_squared_error':
-                if forecast_col == self.target_col[0]:
-                    accuracy = eval_metric(y_test, yhat[0], squared=False)
-                else:
-                    accuracy = eval_metric(y_test, yhat[1], squared=False)
-                
-            else:
-                if forecast_col == self.target_col[0]:
-                    accuracy = eval_metric(y_test, yhat[0])
-                    
-                else:
-                    accuracy = eval_metric(y_test, yhat[1])
-#                 print(str(accuracy)+" and len is "+str(len(test)))
-            metric.append(accuracy)
-        score = np.mean(metric)
-
-        print ("SCORE:", score)
-        return {'loss':score, 'status':STATUS_OK}
-        
-    trials = Trials()
-
-    best_hyperparams = fmin(fn = objective,
-                    space = param_space,
-                    algo = tpe.suggest,
-                    max_evals = eval_num,
-                    trials = trials)
-    # best_params = {i: int(best_hyperparams[i]) if i in ["num_iterations", "num_leaves", "max_depth","min_data_in_leaf", "top_k"] 
-    #                    else best_hyperparams[i] for i in best_hyperparams}
-    return space_eval(param_space, best_hyperparams)
-
-
 def cv_tune_bidirectional(
     model,
     df,
@@ -1527,56 +1435,98 @@ def cv_tune_bidirectional(
     target_cols = model.target_cols
     tscv = ParametricTimeSeriesSplit(n_splits=cv_split, test_size=test_size, step_size=step_size)
 
+# example: lgb_param_space_bi={'learning_rate': hp.quniform('learning_rate', 0.001, 0.8, 0.0001),
+#             'num_leaves': scope.int(hp.quniform('num_leaves', 10, 200, 1)),
+#            'max_depth':scope.int(hp.quniform('max_depth', 5, 100, 1)),
+
+#     'n_lag': {
+#         'attend': hp.choice('attend_lag', [2,3,[2,3]]),
+#         'verified': hp.choice('verified_lag', [7,4,[3,4]])
+#     },
+#     'trend': {
+#         'attend': hp.choice('attend', [None, "add", "mul"]),
+#         'verified': hp.choice('verified', [None, "add", "mul"])
+#     },
+#     'smoothing_level': {
+#         'attend': hp.uniform('attend', 0, 0.99),
+#         'verified': hp.uniform('verified', 0, 0.99)
+#     },
+#     'smoothing_trend': {
+#         'attend': hp.uniform('attend', 0, 0.99),
+#         'verified': hp.uniform('verified', 0, 0.99)
+#     }
+        
+#         }
+
     def _set_model_params(params):
         # Handle special model parameters that are not passed to model constructor
         # and must be set directly on the forecasting model object
         if "n_lag" in params:
-            if isinstance(params["n_lag"], (tuple, list)):
-                for idx, target_col in enumerate(target_cols):
-                    model.n_lag[target_col] = params["n_lag"][idx]
+            if isinstance(params["n_lag"], dict):
+                if model.n_lag is None:
+                    model.n_lag = {}
+                # If n_lag is a dict, set it for each target column
+                for target_col, lags in params["n_lag"].items():
+                    if isinstance(lags, int):
+                        model.n_lag[target_col] = list(range(1, lags + 1))
+                    elif isinstance(lags, list):
+                        model.n_lag[target_col] = lags
+
+        if "lag_transform" in params:
+            if isinstance(params["lag_transform"], dict):
+                if model.lag_transform is None:
+                    model.lag_transform = {}
+                # If lag_transform is a dict, set it for each target column
+                for target_col, lag_transform in params["lag_transform"].items():
+                    model.lag_transform[target_col] = lag_transform
+
         if "difference" in params:
-            if isinstance(params["difference"], (tuple, list)):
-                # If difference is a tuple or list, set it for each target column
-                for idx, target_col in enumerate(target_cols):
-                    model.difference[target_col] = params["difference"][idx]
+            if isinstance(params["difference"], dict):
+                # If difference is a dict, set it for each target column
+                for target_col, diff in params["difference"].items():
+                    model.difference[target_col] = diff
+        
+        if "seasonal_length" in params:
+            if isinstance(params["seasonal_length"], dict):
+                # If seasonal_length is a dict, set it for each target column
+                for target_col, seasonal_length in params["seasonal_length"].items():
+                    model.season_diff[target_col] = seasonal_length
 
         if "box_cox" in params:
-            if isinstance(params["box_cox"], (tuple, list)):
-                for idx, target_col in enumerate(target_cols):
-                    model.box_cox[target_col] = params["box_cox"][idx]
+            if isinstance(params["box_cox"], dict):
+                for target_col, box_cox in params["box_cox"].items():
+                    model.box_cox[target_col] = box_cox
         if "box_cox_lmda" in params:
-            if isinstance(params["box_cox_lmda"], (tuple, list)):
-                for idx, target_col in enumerate(target_cols):
-                    model.lmda[target_col] = params["box_cox_lmda"][idx]
+            if isinstance(params["box_cox_lmda"], dict):
+                for target_col, lamda in params["box_cox_lmda"].items():
+                    model.lamda[target_col] = lamda
         if "box_cox_biasadj" in params:
-            if isinstance(params["box_cox_biasadj"], (tuple, list)):
-                for idx, target_col in enumerate(target_cols):
-                    model.biasadj[target_col] = params["box_cox_biasadj"][idx]
-        # if "trend" in params:
-        #     for target_col in target_cols:
-        #         model.trend[target_col] = params["trend"]
-
-        # Handle ETS trend settings
-        # ets_params (dict, optional): Dictionary of ETS model parameters (values are tuples of dictionaries of params) and fit settings for each target variable. Example: {'Target1': ({'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}), 'Target2': ({'trend': 'mul', 'seasonal': 'mul'}, {'damped_trend': False})}.
-        if model.trend is not None:
-            for idx, target_col in enumerate(target_cols):
-                if model.trend[target_col] and model.trend_type[target_col] in ("ses", "feature_ses"):
-                    model.ets_params[target_col] = {target_col: [{k: params[k][idx] for k in ["trend", "damped_trend", "seasonal", "seasonal_periods"] if k in params}] for target_col in target_cols} # Set trend and seasonal parameters for each target column
-                    model.ets_fit = {}
-                    for k in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
-                        if k in params:
-                            # Only set "damping_trend" if "damped_trend" is True
-                            if (k == "damping_trend") and ("damped_trend" in params and not params["damped_trend"]):
-                                continue
-                        model.ets_fit[k] = params[k][idx]
-                    # append model.ets_fit to model.ets_params[target_col]
-                    model.ets_params[target_col].append(model.ets_fit)
+            if isinstance(params["box_cox_biasadj"], dict):
+                for target_col, biasadj in params["box_cox_biasadj"].items():
+                    model.biasadj[target_col] = biasadj
+        # Handle ETS trend
+        # in the model: ets_params (dict, optional): Dictionary of ETS model parameters (values are tuples of dictionaries of params) and fit settings for each target variable. Example: {'Target1': [{'trend': 'add', 'seasonal': 'add'}, {'damped_trend': True}], 'Target2': [{'trend': 'mul', 'seasonal': 'mul'}, {'damped_trend': False}]}.
+        # if model.trend is not None:
+        #     model.ets_params = {}
+        #     for target_col in model.trend.keys(): # Iterate over each target column that has a trend (It can be 1 or 2 target columns)
+        #         if (model.trend[target_col]) and (model.trend_type[target_col] in ["ses", "feature_ses"]):
+        #             model.ets_params[target_col] = [{k: params[k][target_col] for k in ["trend", "damped_trend", "seasonal", "seasonal_periods"] if k in params}] # Set trend and seasonal parameters for each target column
+        #             model.ets_fit = {}
+        #             for k in ["smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend"]:
+        #                 if k in params:
+        #                     # Only set "damping_trend" if "damped_trend" is True
+        #                     if (k == "damping_trend") and ("damped_trend" in params and not params["damped_trend"]):
+        #                         continue
+        #                     else:
+        #                         model.ets_fit[k] = params[k][target_col]
+        #             # append model.ets_fit to model.ets_params[target_col]
+        #             model.ets_params[target_col].append(model.ets_fit)
 
     def _get_model_params_for_fit(params):
         # Exclude special parameters that should not be passed to the model constructor
         skip_keys = {
-            "box_cox", "n_lag", "box_cox_lmda", "box_cox_biasadj",
-            "trend", "damped_trend", "seasonal", "seasonal_periods",
+            "box_cox", "n_lag", "lag_transform", "box_cox_lmda", "box_cox_biasadj",
+            "trend", "damped_trend", "seasonal", "seasonal_periods", "seasonal_length",
             "smoothing_level", "smoothing_trend", "smoothing_seasonal", "damping_trend",
             "difference"
         }
@@ -1584,36 +1534,41 @@ def cv_tune_bidirectional(
 
     def objective(params):
         _set_model_params(params)
-        model_params = _get_model_params_for_fit(params) if getattr(model, "model", None) and model.model.__name__ != "LinearRegression" else None
+        if isinstance(model.model, LinearRegression):
+            # For LinearRegression, we don't need to set model_params
+            model_params = None
+        else:
+            # For other models, get the parameters to set
+            model_params = _get_model_params_for_fit(params)
+        
 
         metrics = []
         for train_index, test_index in tscv.split(df):
             train, test = df.iloc[train_index], df.iloc[test_index]
-            x_test = test.drop(columns=[target_cols])
+            x_test = test.drop(columns=model.target_cols)
             y_test = np.array(test[forecast_col])
 
             if model_params is not None:
                 model.model.set_params(**model_params)
-                model.fit(train, model_params)
-            else:
-                model.fit(train)
+            model.fit(train)
+
             y_pred = model.forecast(n_ahead=len(y_test), x_test=x_test)[forecast_col]
 
             # Evaluate using the specified metric
-            if eval_metric.__name__ == "mean_squared_error":
-                score = eval_metric(
-                    y_test[-opt_horizon:] if opt_horizon else y_test,
-                    y_pred[-opt_horizon:] if opt_horizon else y_pred,
-                    squared=False,
-                )
-            elif eval_metric.__name__ in ("MeanAbsoluteScaledError", "MedianAbsoluteScaledError"):
-                score = eval_metric(
-                    y_test[-opt_horizon:] if opt_horizon else y_test,
-                    y_pred[-opt_horizon:] if opt_horizon else y_pred,
-                    np.array(train[model.target_col])
-                )
-            else:
-                score = eval_metric(
+            # if eval_metric.__name__ == "mean_squared_error":
+            #     score = eval_metric(
+            #         y_test[-opt_horizon:] if opt_horizon else y_test,
+            #         y_pred[-opt_horizon:] if opt_horizon else y_pred,
+            #         squared=False,
+            #     )
+            # elif eval_metric.__name__ in ("MeanAbsoluteScaledError", "MedianAbsoluteScaledError"):
+            #     score = eval_metric(
+            #         y_test[-opt_horizon:] if opt_horizon else y_test,
+            #         y_pred[-opt_horizon:] if opt_horizon else y_pred,
+            #         np.array(train[model.target_col])
+            #     )
+            # else:
+            score = eval_metric(
                     y_test[-opt_horizon:] if opt_horizon else y_test,
                     y_pred[-opt_horizon:] if opt_horizon else y_pred,
                 )
